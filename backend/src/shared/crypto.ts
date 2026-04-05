@@ -3,7 +3,8 @@ import { createCipheriv, createDecipheriv, randomBytes, createHash } from "crypt
 const algorithm = "aes-256-cbc";
 
 function getKey(): Buffer {
-  const secret = process.env.CPF_ENCRYPTION_KEY ?? process.env.JWT_SECRET ?? "default_key";
+  const secret = process.env.CPF_ENCRYPTION_KEY ?? process.env.JWT_SECRET;
+  if (!secret) throw new Error("CPF_ENCRYPTION_KEY ou JWT_SECRET não configurado.");
   return createHash("sha256").update(secret).digest();
 }
 
@@ -23,7 +24,9 @@ export function decryptCPF(encrypted: string): string {
 
 // Hash determinístico para busca por CPF (não reversível)
 export function hashCPF(cpf: string): string {
-  return createHash("sha256").update(cpf + (process.env.CPF_ENCRYPTION_KEY ?? process.env.JWT_SECRET ?? "default_key")).digest("hex");
+  const secret = process.env.CPF_ENCRYPTION_KEY ?? process.env.JWT_SECRET;
+  if (!secret) throw new Error("CPF_ENCRYPTION_KEY ou JWT_SECRET não configurado.");
+  return createHash("sha256").update(cpf + secret).digest("hex");
 }
 
 export function sanitizeCSVField(value: string): string {
