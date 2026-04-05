@@ -153,7 +153,7 @@ export default function RegisterPage() {
               <div className="relative">
                 <input type="text" required value={form.cpf}
                   onChange={(e) => setForm({ ...form, cpf: maskCPF(e.target.value) })}
-                  className={`${input} pr-10`} placeholder="000.000.000-00" maxLength={14} />
+                  className={`${input} pr-10`} placeholder="000.000.000-00" maxLength={14} inputMode="numeric" />
                 {cpfValid !== null && (
                   <span className="absolute right-3 top-1/2 -translate-y-1/2">
                     {cpfValid
@@ -248,7 +248,7 @@ export default function RegisterPage() {
             </Field>
 
             <button type="submit" disabled={loading}
-              className="mt-2 w-full rounded-2xl bg-amber-500 py-3.5 text-sm font-bold text-black hover:bg-amber-400 transition disabled:opacity-60">
+              className="mt-2 w-full rounded-2xl bg-amber-500 py-3.5 text-sm font-bold text-black hover:bg-amber-400 active:scale-95 transition-transform disabled:opacity-60">
               {loading ? "Criando conta..." : role === "barber" ? "Criar conta de barbeiro" : "Criar conta de cliente"}
             </button>
           </form>

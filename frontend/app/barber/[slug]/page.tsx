@@ -319,7 +319,7 @@ export default function BarberPage() {
       {barber.services.length > 0 && (
         <button
           onClick={scrollToBooking}
-          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 px-5 py-3.5 text-sm font-bold text-black shadow-[0_0_24px_rgba(245,158,11,0.4)] hover:shadow-[0_0_32px_rgba(245,158,11,0.6)] transition-all select-none touch-target"
+          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 px-5 py-3.5 text-sm font-bold text-black shadow-[0_0_24px_rgba(245,158,11,0.4)] hover:shadow-[0_0_32px_rgba(245,158,11,0.6)] active:scale-95 transition-all select-none touch-target"
           style={{ paddingBottom: `calc(0.875rem + env(safe-area-inset-bottom))` }}
         >
           <CalendarCheck size={16} />

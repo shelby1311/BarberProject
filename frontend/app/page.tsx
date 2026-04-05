@@ -89,7 +89,7 @@ export default function HomePage() {
             <button
               type="button"
               onClick={() => setShowFilters(!showFilters)}
-              className={`flex items-center gap-2 rounded-2xl border px-4 py-3.5 text-sm font-bold transition ${
+              className={`flex items-center gap-2 rounded-2xl border px-4 py-3.5 text-sm font-bold active:scale-95 transition-transform ${
                 hasFilters
                   ? "border-amber-500 bg-amber-500/10 text-amber-400"
                   : "border-white/10 bg-zinc-900 text-zinc-400 hover:border-amber-500/30 hover:text-white"
@@ -99,7 +99,7 @@ export default function HomePage() {
             </button>
             <button
               type="submit"
-              className="flex items-center gap-2 rounded-2xl bg-amber-500 px-6 py-3.5 text-sm font-bold text-black hover:bg-amber-400 transition"
+              className="flex items-center gap-2 rounded-2xl bg-amber-500 px-6 py-3.5 text-sm font-bold text-black hover:bg-amber-400 active:scale-95 transition-transform"
             >
               <Search size={16} />
               Buscar
