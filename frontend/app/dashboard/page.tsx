@@ -308,7 +308,7 @@ export default function DashboardPage() {
           <div className="flex items-center gap-2">
             <button
               onClick={copyPublicLink}
-              className="flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2 text-sm text-zinc-400 hover:border-amber-500/30 hover:text-white transition select-none"
+              className="flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2 text-sm text-zinc-400 hover:border-amber-500/30 hover:text-white active:scale-95 transition-transform select-none"
               title="Copie e cole no Instagram como link da bio"
             >
               {linkCopied ? <CheckCheck size={14} className="text-emerald-400" /> : <Copy size={14} />}
@@ -385,7 +385,7 @@ export default function DashboardPage() {
             <button
               onClick={saveProfile}
               disabled={saving}
-              className="mt-5 flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-bold text-black hover:bg-amber-400 transition disabled:opacity-60 select-none touch-target"
+              className="mt-5 flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-bold text-black hover:bg-amber-400 active:scale-95 transition-transform disabled:opacity-60 select-none touch-target"
             >
               <Save size={14} /> {saving ? "Salvando..." : "Salvar perfil"}
             </button>
@@ -484,7 +484,7 @@ export default function DashboardPage() {
             <button
               onClick={savePresetServices}
               disabled={savingServices}
-              className="flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-bold text-black hover:bg-amber-400 transition disabled:opacity-60 select-none touch-target"
+              className="flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-bold text-black hover:bg-amber-400 active:scale-95 transition-transform disabled:opacity-60 select-none touch-target"
             >
               <Save size={14} /> {savingServices ? "Salvando..." : "Salvar serviços"}
             </button>
@@ -527,6 +527,7 @@ export default function DashboardPage() {
                   step="0.01"
                   value={newService.priceInCents}
                   onChange={(e) => setNewService({ ...newService, priceInCents: e.target.value })}
+                  inputMode="decimal"
                   className="w-24 rounded-xl border border-white/10 bg-zinc-800 px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:border-amber-500/50 focus:outline-none"
                 />
                 <input
@@ -534,11 +535,12 @@ export default function DashboardPage() {
                   type="number"
                   value={newService.durationMinutes}
                   onChange={(e) => setNewService({ ...newService, durationMinutes: e.target.value })}
+                  inputMode="numeric"
                   className="w-20 rounded-xl border border-white/10 bg-zinc-800 px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:border-amber-500/50 focus:outline-none"
                 />
                 <button
                   onClick={addCustomService}
-                  className="flex items-center gap-1 rounded-xl bg-zinc-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-zinc-600 transition"
+                  className="flex items-center gap-1 rounded-xl bg-zinc-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-zinc-600 active:scale-95 transition-transform"
                 >
                   <Plus size={15} />
                 </button>
@@ -588,7 +590,7 @@ export default function DashboardPage() {
               })}
             </div>
             <button onClick={saveWorkingHours} disabled={savingHours}
-              className="mt-5 flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-bold text-black hover:bg-amber-400 transition disabled:opacity-60 select-none touch-target">
+              className="mt-5 flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-bold text-black hover:bg-amber-400 active:scale-95 transition-transform disabled:opacity-60 select-none touch-target">
               <Save size={14} /> {savingHours ? "Salvando..." : "Salvar horários"}
             </button>
           </section>
@@ -810,7 +812,7 @@ export default function DashboardPage() {
               <button
                 onClick={addExpense}
                 disabled={savingExpense}
-                className="flex items-center gap-1 rounded-xl bg-zinc-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-zinc-600 transition disabled:opacity-60"
+                className="flex items-center gap-1 rounded-xl bg-zinc-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-zinc-600 active:scale-95 transition-transform disabled:opacity-60"
               >
                 <Plus size={15} />
               </button>
@@ -832,7 +834,7 @@ export default function DashboardPage() {
                     </div>
                     <button
                       onClick={() => unblockClient(c.id)}
-                      className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/20 transition"
+                      className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/20 active:scale-95 transition-transform"
                     >
                       Desbloquear
                     </button>
@@ -879,7 +881,7 @@ export default function DashboardPage() {
               />
               <button
                 onClick={addImage}
-                className="flex items-center gap-1 rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-bold text-black hover:bg-amber-400 transition"
+                className="flex items-center gap-1 rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-bold text-black hover:bg-amber-400 active:scale-95 transition-transform"
               >
                 <Plus size={15} />
               </button>
