@@ -74,6 +74,7 @@ export default function LoginPage() {
                 className="w-full rounded-xl border border-white/10 bg-zinc-800 px-4 py-3 text-sm text-white placeholder-zinc-600 focus:border-amber-500/50 focus:outline-none"
                 placeholder="000.000.000-00"
                 maxLength={14}
+                inputMode="numeric"
               />
             </div>
 

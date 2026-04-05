@@ -326,6 +326,27 @@ barberRouter.delete("/me/expenses/:id", authMiddleware, requireBarber, async (re
   } catch (err) { next(err); }
 });
 
+// Clientes bloqueados — lista e desbloqueia
+barberRouter.get("/me/blocked-clients", authMiddleware, requireBarber, async (req: AuthRequest, res, next) => {
+  try {
+    const clients = await prisma.client.findMany({
+      where: { isBlocked: true, appointments: { some: { barberId: req.barberId } } },
+      include: { user: { select: { name: true, email: true } } },
+    });
+    res.json(clients.map((c) => ({ id: c.id, name: c.user.name, email: c.user.email, noShowCount: c.noShowCount })));
+  } catch (err) { next(err); }
+});
+
+barberRouter.patch("/me/clients/:clientId/unblock", authMiddleware, requireBarber, async (req: AuthRequest, res, next) => {
+  try {
+    // Verifica se o cliente tem agendamento com este barbeiro
+    const appt = await prisma.appointment.findFirst({ where: { barberId: req.barberId, clientId: req.params.clientId } });
+    if (!appt) return res.status(403).json({ message: "Cliente não pertence a este barbeiro." });
+    await prisma.client.update({ where: { id: req.params.clientId }, data: { isBlocked: false, noShowCount: 0 } });
+    res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
 const WorkingHoursSchema = z.array(z.object({
   dayOfWeek: z.number().int().min(0).max(6),
   startTime: z.string().regex(/^\d{2}:\d{2}$/),

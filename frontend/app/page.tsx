@@ -217,7 +217,7 @@ export default function HomePage() {
                 transition={{ delay: i * 0.08 }}
               >
                 <div className="group block">
-                  <div className="overflow-hidden rounded-3xl border border-white/5 bg-zinc-900 transition hover:border-amber-500/30">
+                  <div className="amber-glow overflow-hidden rounded-3xl border border-white/5 bg-zinc-900/70 backdrop-blur-md transition hover:border-amber-500/40" style={{ transition: "box-shadow 0.3s, border-color 0.3s" }}>
                     <Link href={`/barber/${barber.slug}`} className="block">
                       <div className="relative h-44 w-full bg-zinc-800">
                         {barber.coverUrl ? (

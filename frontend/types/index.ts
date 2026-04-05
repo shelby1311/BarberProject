@@ -49,6 +49,13 @@ export interface Expense {
   date: string;
 }
 
+export interface BlockedClient {
+  id: string;
+  name: string;
+  email: string;
+  noShowCount: number;
+}
+
 export interface ScheduleBlock {
   id: string;
   date: string;

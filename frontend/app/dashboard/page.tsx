@@ -6,13 +6,13 @@ import Image from "next/image";
 import { io } from "socket.io-client";
 import {
   Scissors, MapPin, Link2, Phone, Plus, Trash2,
-  Save, Image as ImageIcon, ExternalLink, Clock, Check, CalendarDays, User, Calendar, MessageCircle, TrendingDown, TrendingUp, DollarSign
+  Save, Image as ImageIcon, ExternalLink, Clock, Check, CalendarDays, User, Calendar, MessageCircle, TrendingDown, TrendingUp, DollarSign, ShieldOff, Copy, CheckCheck, BarChart2, Users, Percent
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Header } from "@/components/Header";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import { Barber, Service, Appointment, WorkingHour, Expense } from "@/types";
+import { Barber, Service, Appointment, WorkingHour, Expense, BlockedClient } from "@/types";
 
 const brl = (c: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(c / 100);
@@ -53,12 +53,25 @@ export default function DashboardPage() {
   const [feedback, setFeedback] = useState("");
   const [savingServices, setSavingServices] = useState(false);
   const [liveToast, setLiveToast] = useState<string | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  function copyPublicLink() {
+    if (!data?.slug) return;
+    const url = `${window.location.origin}/barber/${data.slug}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2500);
+    });
+  }
 
   // Gestão financeira
   const currentMonth = new Date().toISOString().slice(0, 7);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [newExpense, setNewExpense] = useState({ description: "", amount: "", date: new Date().toISOString().split("T")[0] });
   const [savingExpense, setSavingExpense] = useState(false);
+
+  // Clientes bloqueados
+  const [blockedClients, setBlockedClients] = useState<BlockedClient[]>([]);
 
   // Horários de trabalho
   const DAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
@@ -122,6 +135,7 @@ export default function DashboardPage() {
       if (d.workingHours && d.workingHours.length > 0) setWorkingHours(d.workingHours);
     }).finally(() => setLoading(false));
     api.getExpenses(currentMonth).then(setExpenses).catch(() => {});
+    api.getBlockedClients().then(setBlockedClients).catch(() => {});
   }, [authBarber]);
 
   async function saveProfile() {
@@ -250,6 +264,11 @@ export default function DashboardPage() {
     setExpenses((prev) => prev.filter((e) => e.id !== id));
   }
 
+  async function unblockClient(clientId: string) {
+    await api.unblockClient(clientId);
+    setBlockedClients((prev) => prev.filter((c) => c.id !== clientId));
+  }
+
   function whatsappLink(phone: string, clientName: string, serviceName: string, startsAt: string) {
     const time = new Date(startsAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     const date = new Date(startsAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "long" });
@@ -286,13 +305,23 @@ export default function DashboardPage() {
             <h1 className="text-2xl font-black text-white">Dashboard</h1>
             <p className="text-sm text-zinc-500">Gerencie sua barbearia</p>
           </div>
-          <a
-            href={`/barber/${data.slug}`}
-            target="_blank"
-            className="flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2 text-sm text-zinc-400 hover:border-amber-500/30 hover:text-white transition"
-          >
-            <ExternalLink size={14} /> Ver página pública
-          </a>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={copyPublicLink}
+              className="flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2 text-sm text-zinc-400 hover:border-amber-500/30 hover:text-white transition select-none"
+              title="Copie e cole no Instagram como link da bio"
+            >
+              {linkCopied ? <CheckCheck size={14} className="text-emerald-400" /> : <Copy size={14} />}
+              {linkCopied ? "Copiado!" : "Link p/ Instagram"}
+            </button>
+            <a
+              href={`/barber/${data.slug}`}
+              target="_blank"
+              className="flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2 text-sm text-zinc-400 hover:border-amber-500/30 hover:text-white transition"
+            >
+              <ExternalLink size={14} /> Ver página pública
+            </a>
+          </div>
         </div>
 
         <AnimatePresence>
@@ -356,7 +385,7 @@ export default function DashboardPage() {
             <button
               onClick={saveProfile}
               disabled={saving}
-              className="mt-5 flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-bold text-black hover:bg-amber-400 transition disabled:opacity-60"
+              className="mt-5 flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-bold text-black hover:bg-amber-400 transition disabled:opacity-60 select-none touch-target"
             >
               <Save size={14} /> {saving ? "Salvando..." : "Salvar perfil"}
             </button>
@@ -428,6 +457,7 @@ export default function DashboardPage() {
                                 onChange={(e) =>
                                   setPresets((prev) => ({ ...prev, [preset.name]: { ...prev[preset.name], price: e.target.value } }))
                                 }
+                                inputMode="decimal"
                                 className="w-full rounded-lg border border-white/10 bg-zinc-800 px-3 py-1.5 text-sm text-white focus:border-amber-500/50 focus:outline-none"
                               />
                             </div>
@@ -454,7 +484,7 @@ export default function DashboardPage() {
             <button
               onClick={savePresetServices}
               disabled={savingServices}
-              className="flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-bold text-black hover:bg-amber-400 transition disabled:opacity-60"
+              className="flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-bold text-black hover:bg-amber-400 transition disabled:opacity-60 select-none touch-target"
             >
               <Save size={14} /> {savingServices ? "Salvando..." : "Salvar serviços"}
             </button>
@@ -558,7 +588,7 @@ export default function DashboardPage() {
               })}
             </div>
             <button onClick={saveWorkingHours} disabled={savingHours}
-              className="mt-5 flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-bold text-black hover:bg-amber-400 transition disabled:opacity-60">
+              className="mt-5 flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-bold text-black hover:bg-amber-400 transition disabled:opacity-60 select-none touch-target">
               <Save size={14} /> {savingHours ? "Salvando..." : "Salvar horários"}
             </button>
           </section>
@@ -614,6 +644,88 @@ export default function DashboardPage() {
                     );
                   })}
               </div>
+            </section>
+          )}
+
+          {/* Bento Grid de Métricas */}
+          {data.metrics && (
+            <section>
+              <h2 className="mb-4 flex items-center gap-2 font-bold text-white">
+                <BarChart2 size={16} className="text-amber-500" /> Visão Geral do Mês
+              </h2>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {/* Caixa grande — Faturamento */}
+                <div className="col-span-2 rounded-3xl border border-white/5 bg-zinc-900/70 backdrop-blur-md p-5">
+                  <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500">Faturamento Mensal</p>
+                  <p className="mt-2 text-3xl font-black text-emerald-400">{brl(data.metrics.monthlyRevenueInCents)}</p>
+                  {data.metrics.topServices.length > 0 && (
+                    <div className="mt-4">
+                      <p className="mb-2 text-xs text-zinc-600">Top Serviços</p>
+                      <div className="flex flex-col gap-1.5">
+                        {data.metrics.topServices.slice(0, 3).map((s) => (
+                          <div key={s.name} className="flex items-center justify-between">
+                            <span className="text-xs text-zinc-400">{s.name}</span>
+                            <span className="rounded-lg bg-amber-500/10 px-2 py-0.5 text-xs font-bold text-amber-400">{s.count}x</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Caixa — Total de Clientes */}
+                <div className="rounded-3xl border border-white/5 bg-zinc-900/70 backdrop-blur-md p-5">
+                  <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500">Clientes</p>
+                  <div className="mt-2 flex items-end gap-2">
+                    <p className="text-3xl font-black text-white">{data.metrics.totalCompleted}</p>
+                    <Users size={18} className="mb-1 text-zinc-600" />
+                  </div>
+                  <p className="mt-1 text-xs text-zinc-600">atendimentos concluídos</p>
+                </div>
+
+                {/* Caixa — Avaliação */}
+                <div className="rounded-3xl border border-white/5 bg-zinc-900/70 backdrop-blur-md p-5">
+                  <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500">Avaliação</p>
+                  <div className="mt-2 flex items-end gap-2">
+                    <p className="text-3xl font-black text-amber-400">
+                      {data.metrics.averageRating != null ? data.metrics.averageRating.toFixed(1) : "—"}
+                    </p>
+                    <span className="mb-1 text-xs text-zinc-600">/ 5.0</span>
+                  </div>
+                  <p className="mt-1 text-xs text-zinc-600">{data.metrics.totalReviews} avaliações</p>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* Calculadora de Ganhos (só para staff com commissionPct) */}
+          {(data as Barber & { commissionPct?: number }).commissionPct != null && (
+            <section className="rounded-3xl border border-amber-500/20 bg-amber-950/10 p-6">
+              <h2 className="mb-4 flex items-center gap-2 font-bold text-white">
+                <Percent size={16} className="text-amber-500" /> Calculadora de Ganhos
+              </h2>
+              {(() => {
+                const commission = (data as Barber & { commissionPct?: number }).commissionPct ?? 0;
+                const revenue = data.metrics?.monthlyRevenueInCents ?? 0;
+                const myShare = Math.round(revenue * (commission / 100));
+                const ownerShare = revenue - myShare;
+                return (
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="rounded-2xl border border-white/5 bg-zinc-900 px-4 py-3">
+                      <p className="text-xs text-zinc-500">Faturamento Total</p>
+                      <p className="mt-1 text-base font-bold text-white">{brl(revenue)}</p>
+                    </div>
+                    <div className="rounded-2xl border border-emerald-500/20 bg-emerald-950/30 px-4 py-3">
+                      <p className="text-xs text-zinc-500">Minha parte ({commission}%)</p>
+                      <p className="mt-1 text-base font-bold text-emerald-400">{brl(myShare)}</p>
+                    </div>
+                    <div className="rounded-2xl border border-white/5 bg-zinc-900 px-4 py-3">
+                      <p className="text-xs text-zinc-500">Parte do dono</p>
+                      <p className="mt-1 text-base font-bold text-zinc-400">{brl(ownerShare)}</p>
+                    </div>
+                  </div>
+                );
+              })()}
             </section>
           )}
 
@@ -686,6 +798,7 @@ export default function DashboardPage() {
                 step="0.01"
                 value={newExpense.amount}
                 onChange={(e) => setNewExpense({ ...newExpense, amount: e.target.value })}
+                inputMode="decimal"
                 className="w-24 rounded-xl border border-white/10 bg-zinc-800 px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:border-amber-500/50 focus:outline-none"
               />
               <input
@@ -703,6 +816,31 @@ export default function DashboardPage() {
               </button>
             </div>
           </section>
+
+          {/* Clientes Bloqueados */}
+          {blockedClients.length > 0 && (
+            <section className="rounded-3xl border border-red-500/10 bg-zinc-900 p-6">
+              <h2 className="mb-5 flex items-center gap-2 font-bold text-white">
+                <ShieldOff size={16} className="text-red-400" /> Clientes Bloqueados
+              </h2>
+              <div className="flex flex-col gap-2">
+                {blockedClients.map((c) => (
+                  <div key={c.id} className="flex items-center justify-between rounded-xl border border-white/5 bg-zinc-800 px-4 py-3">
+                    <div>
+                      <p className="text-sm font-medium text-white">{c.name}</p>
+                      <p className="text-xs text-zinc-500">{c.email} · {c.noShowCount} falta{c.noShowCount !== 1 ? "s" : ""}</p>
+                    </div>
+                    <button
+                      onClick={() => unblockClient(c.id)}
+                      className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/20 transition"
+                    >
+                      Desbloquear
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           {/* Galeria */}
           <section className="rounded-3xl border border-white/5 bg-zinc-900 p-6">

@@ -102,6 +102,12 @@ export const api = {
   deleteExpense: (id: string) =>
     apiFetch<void>(`/api/barbers/me/expenses/${id}`, { method: "DELETE" }),
 
+  getBlockedClients: () =>
+    apiFetch<import("@/types").BlockedClient[]>("/api/barbers/me/blocked-clients"),
+
+  unblockClient: (clientId: string) =>
+    apiFetch<{ success: boolean }>(`/api/barbers/me/clients/${clientId}/unblock`, { method: "PATCH" }),
+
   exportAgenda: (month: string) =>
     `${API_URL}/api/barbers/me/export?month=${month}`,
 

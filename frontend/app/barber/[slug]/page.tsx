@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, notFound } from "next/navigation";
 import Image from "next/image";
-import { MapPin, Link2, Phone, Clock, Star, X, ChevronLeft, ChevronRight, Share2, MessageCircle } from "lucide-react";
+import { MapPin, Link2, Phone, Clock, Star, X, ChevronLeft, ChevronRight, Share2, MessageCircle, CalendarCheck } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Header } from "@/components/Header";
 import { ServiceList } from "@/presentation/components/ServiceList";
@@ -89,6 +89,11 @@ export default function BarberPage() {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(true);
+  const bookingRef = typeof window !== "undefined" ? null : null;
+
+  function scrollToBooking() {
+    document.getElementById("booking-section")?.scrollIntoView({ behavior: "smooth" });
+  }
 
   useEffect(() => {
     Promise.all([
@@ -242,7 +247,7 @@ export default function BarberPage() {
         )}
 
         {/* Serviços e agendamento */}
-        <div className="rounded-3xl border border-white/5 bg-zinc-900/50 backdrop-blur-xl mb-8">
+        <div id="booking-section" className="rounded-3xl border border-white/5 bg-zinc-900/50 backdrop-blur-xl mb-8">
           {barber.services.length > 0 && <ServiceList services={barber.services} />}
 
           {/* Quadro de horários */}
@@ -309,6 +314,18 @@ export default function BarberPage() {
           </div>
         )}
       </div>
+
+      {/* Botão flutuante — Agendar Agora */}
+      {barber.services.length > 0 && (
+        <button
+          onClick={scrollToBooking}
+          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 px-5 py-3.5 text-sm font-bold text-black shadow-[0_0_24px_rgba(245,158,11,0.4)] hover:shadow-[0_0_32px_rgba(245,158,11,0.6)] transition-all select-none touch-target"
+          style={{ paddingBottom: `calc(0.875rem + env(safe-area-inset-bottom))` }}
+        >
+          <CalendarCheck size={16} />
+          Agendar Agora
+        </button>
+      )}
     </div>
   );
 }
