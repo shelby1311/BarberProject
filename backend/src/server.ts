@@ -7,6 +7,7 @@ import { Server as SocketServer } from "socket.io";
 import rateLimit from "express-rate-limit";
 import multer from "multer";
 import cron from "node-cron";
+import helmet from "helmet";
 import { authRouter } from "./routes/auth";
 import { barberRouter } from "./routes/barbers";
 import { bookingRouter } from "./routes/bookings";
@@ -23,12 +24,12 @@ export const io = new SocketServer(httpServer, {
 });
 
 io.on("connection", (socket) => {
-  // Barbeiro entra na sala do seu próprio dashboard
   socket.on("join:barber", (barberId: string) => socket.join(`barber:${barberId}`));
 });
 
 const PORT = process.env.PORT ?? 3001;
 
+app.use(helmet());
 app.use(cors({ origin: process.env.FRONTEND_URL ?? "http://localhost:3000" }));
 app.use(express.json());
 
@@ -61,6 +62,15 @@ const upload = multer({
   },
 });
 
+// Validação de magic bytes após upload
+async function validateImageMagicBytes(filePath: string): Promise<boolean> {
+  try {
+    const fileType = await import("file-type");
+    const type = await fileType.fromFile(filePath);
+    return !!type && type.mime.startsWith("image/");
+  } catch { return false; }
+}
+
 const uploadLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 20,
@@ -70,8 +80,16 @@ const uploadLimiter = rateLimit({
 });
 
 // Rota de upload de imagem (avatar ou capa)
-app.post("/api/upload", uploadLimiter, upload.single("image"), (req, res) => {
+app.post("/api/upload", uploadLimiter, upload.single("image"), async (req, res) => {
   if (!req.file) return res.status(400).json({ message: "Nenhuma imagem enviada." });
+
+  const isValid = await validateImageMagicBytes(req.file.path);
+  if (!isValid) {
+    const fs = await import("fs");
+    fs.unlinkSync(req.file.path);
+    return res.status(400).json({ message: "Arquivo inválido. Apenas imagens são permitidas." });
+  }
+
   const url = `${process.env.BACKEND_URL ?? `http://localhost:${PORT}`}/uploads/${req.file.filename}`;
   res.json({ url });
 });

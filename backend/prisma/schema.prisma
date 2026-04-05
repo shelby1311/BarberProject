@@ -9,7 +9,8 @@ datasource db {
 
 model User {
   id           String   @id @default(cuid())
-  cpf          String   @unique
+  cpf          String   @unique // armazenado criptografado (AES-256-CBC)
+  cpfHash      String   @default("") @map("cpf_hash") // SHA-256 para busca
   email        String   @unique
   name         String
   passwordHash String   @map("password_hash")
@@ -160,4 +161,14 @@ model Review {
   client        Client      @relation(fields: [clientId], references: [id])
 
   @@map("reviews")
+}
+
+model PasswordReset {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("password_resets")
 }

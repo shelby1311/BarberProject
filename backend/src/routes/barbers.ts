@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "../infra/db/connection";
 import { authMiddleware, requireBarber, AuthRequest } from "../shared/authMiddleware";
 import { NotFoundException } from "../shared/AppError";
+import { sanitizeCSVField } from "../shared/crypto";
 
 export const barberRouter = Router();
 
@@ -16,42 +17,58 @@ barberRouter.get("/me/dashboard", authMiddleware, requireBarber, async (req: Aut
       include: {
         services: true, gallery: true, workingHours: true, scheduleBlocks: true,
         appointments: { include: { service: true, client: { select: { phone: true } } }, orderBy: { startsAt: "asc" } },
-        reviews: true,
       },
     });
     if (!barber) throw new NotFoundException("Barbeiro");
 
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const completed = barber.appointments.filter((a) => a.status === "completed");
-    const monthlyRevenue = completed
-      .filter((a) => new Date(a.startsAt) >= startOfMonth)
-      .reduce((sum, a) => sum + (a.service?.priceInCents ?? 0), 0);
 
-    const serviceCounts: Record<string, { name: string; count: number }> = {};
-    completed.forEach((a) => {
-      if (!a.service) return;
-      if (!serviceCounts[a.serviceId]) serviceCounts[a.serviceId] = { name: a.service.name, count: 0 };
-      serviceCounts[a.serviceId].count++;
+    const [topServicesRaw, ratingAgg, completedCount] = await Promise.all([
+      prisma.appointment.groupBy({
+        by: ["serviceId"],
+        where: { barberId: req.barberId, status: "completed" },
+        _count: { serviceId: true },
+        orderBy: { _count: { serviceId: "desc" } },
+        take: 5,
+      }),
+      prisma.review.aggregate({
+        where: { barberId: req.barberId },
+        _avg: { rating: true },
+        _count: { rating: true },
+      }),
+      prisma.appointment.count({ where: { barberId: req.barberId, status: "completed" } }),
+    ]);
+
+    // Receita mensal: soma via join raw (Prisma não suporta _sum em campo de relação)
+    const revenueAgg = await prisma.$queryRaw<[{ total: bigint }]>`
+      SELECT COALESCE(SUM(s.price_in_cents), 0) AS total
+      FROM appointments a JOIN services s ON a.service_id = s.id
+      WHERE a.barber_id = ${req.barberId} AND a.status = 'completed'
+        AND a.starts_at >= ${startOfMonth.toISOString()}
+    `;
+    const monthlyRevenue = Number(revenueAgg[0]?.total ?? 0);
+
+    const serviceIds = topServicesRaw.map((r) => r.serviceId);
+    const serviceNames = await prisma.service.findMany({
+      where: { id: { in: serviceIds } },
+      select: { id: true, name: true },
     });
-    const topServices = Object.values(serviceCounts).sort((a, b) => b.count - a.count).slice(0, 5);
+    const nameMap = Object.fromEntries(serviceNames.map((s) => [s.id, s.name]));
+    const topServices = topServicesRaw.map((r) => ({ name: nameMap[r.serviceId] ?? r.serviceId, count: r._count.serviceId }));
 
-    const avgRating = barber.reviews.length
-      ? barber.reviews.reduce((s, r) => s + r.rating, 0) / barber.reviews.length
-      : null;
+    const avgRating = ratingAgg._avg.rating;
+    const totalReviews = ratingAgg._count.rating;
 
     res.json({
       ...barber,
-      appointments: barber.appointments.map((a) => ({
-        ...a,
-        clientPhone: a.client?.phone ?? null,
-      })),
+      appointments: barber.appointments.map((a) => ({ ...a, clientPhone: a.client?.phone ?? null })),
       metrics: {
         monthlyRevenueInCents: monthlyRevenue,
-        totalCompleted: completed.length,
+        totalCompleted: completedCount,
         topServices,
         averageRating: avgRating,
-        totalReviews: barber.reviews.length,
+        totalReviews,
       },
     });
   } catch (err) { next(err); }
@@ -64,31 +81,38 @@ barberRouter.get("/", async (req, res, next) => {
     const serviceType = req.query.service as string | undefined;
     const minRating = req.query.minRating ? parseFloat(req.query.minRating as string) : undefined;
 
-    const barbers = await prisma.barber.findMany({
-      where: search ? { location: { contains: search } } : undefined,
-      include: { ...include, reviews: true },
-    });
-
-    let result = barbers;
-    if (serviceType) {
-      result = result.filter((b) =>
-        b.services.some((s) => s.name.toLowerCase().includes(serviceType.toLowerCase()))
-      );
-    }
+    // Pré-filtra barbeiros com rating mínimo via groupBy no banco
+    let barberIdsByRating: string[] | undefined;
     if (minRating !== undefined) {
-      result = result.filter((b) => {
-        if (!b.reviews.length) return false;
-        const avg = b.reviews.reduce((s, r) => s + r.rating, 0) / b.reviews.length;
-        return avg >= minRating;
+      const groups = await prisma.review.groupBy({
+        by: ["barberId"],
+        _avg: { rating: true },
+        having: { rating: { _avg: { gte: minRating } } },
       });
+      barberIdsByRating = groups.map((g) => g.barberId);
     }
 
-    res.json(result.map((b) => ({
+    const where: Parameters<typeof prisma.barber.findMany>[0]["where"] = {
+      ...(search ? { location: { contains: search } } : {}),
+      ...(serviceType ? { services: { some: { name: { contains: serviceType } } } } : {}),
+      ...(barberIdsByRating ? { id: { in: barberIdsByRating } } : {}),
+    };
+
+    const barbers = await prisma.barber.findMany({ where, include });
+
+    // Busca médias via aggregate para não trazer todos os reviews
+    const ratingAggs = await prisma.review.groupBy({
+      by: ["barberId"],
+      where: { barberId: { in: barbers.map((b) => b.id) } },
+      _avg: { rating: true },
+      _count: { rating: true },
+    });
+    const ratingMap = Object.fromEntries(ratingAggs.map((r) => [r.barberId, r]));
+
+    res.json(barbers.map((b) => ({
       ...b,
-      averageRating: b.reviews.length
-        ? b.reviews.reduce((s, r) => s + r.rating, 0) / b.reviews.length
-        : null,
-      totalReviews: b.reviews.length,
+      averageRating: ratingMap[b.id]?._avg.rating ?? null,
+      totalReviews: ratingMap[b.id]?._count.rating ?? 0,
     })));
   } catch (err) { next(err); }
 });
@@ -276,8 +300,8 @@ barberRouter.get("/me/export", authMiddleware, requireBarber, async (req: AuthRe
       return [
         d.toLocaleDateString("pt-BR"),
         d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
-        `"${a.clientName}"`,
-        `"${a.service?.name ?? ""}"`,
+        `"${sanitizeCSVField(a.clientName)}"`,
+        `"${sanitizeCSVField(a.service?.name ?? "")}"`,
         a.service?.durationMinutes ?? "",
         price ? (price / 100).toFixed(2) : "",
         commission,
