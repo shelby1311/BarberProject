@@ -27,6 +27,8 @@ model Client {
   phone        String        @default("")
   points       Int           @default(0)
   favorites    String        @default("") @map("favorite_barber_ids") // JSON array de IDs
+  noShowCount  Int           @default(0) @map("no_show_count")
+  isBlocked    Boolean       @default(false) @map("is_blocked")
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   appointments Appointment[]
   reviews      Review[]
@@ -49,6 +51,7 @@ model Barber {
   planStatus      String         @default("TRIAL") @map("plan_status")    // TRIAL | ACTIVE | EXPIRED | CANCELED
   planExpiration  DateTime?      @map("plan_expiration")
   maxStaff        Int            @default(1) @map("max_staff")
+  commissionPct   Float          @default(50) @map("commission_pct")
   ownerId         String?        @map("owner_id")
   owner           Barber?        @relation("BarberStaff", fields: [ownerId], references: [id])
   staff           Barber[]       @relation("BarberStaff")
@@ -59,6 +62,7 @@ model Barber {
   workingHours    WorkingHours[]
   scheduleBlocks  ScheduleBlock[]
   reviews         Review[]
+  expenses        Expense[]
 
   @@map("barbers")
 }
@@ -129,6 +133,18 @@ model Appointment {
 
   @@index([barberId, startsAt])
   @@map("appointments")
+}
+
+model Expense {
+  id             String   @id @default(cuid())
+  barberId       String   @map("barber_id")
+  description    String
+  amountInCents  Int      @map("amount_in_cents")
+  date           String   // "2025-01-15"
+  createdAt      DateTime @default(now()) @map("created_at")
+  barber         Barber   @relation(fields: [barberId], references: [id], onDelete: Cascade)
+
+  @@map("expenses")
 }
 
 model Review {

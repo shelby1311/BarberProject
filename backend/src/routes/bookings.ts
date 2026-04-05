@@ -90,6 +90,14 @@ bookingRouter.post("/", async (req, res, next) => {
       } catch { /* anônimo */ }
     }
 
+    // Verifica se cliente está bloqueado nesta barbearia
+    if (clientId) {
+      const client = await prisma.client.findUnique({ where: { id: clientId } });
+      if (client?.isBlocked) {
+        throw new BusinessRuleException("Você está bloqueado nesta barbearia devido a faltas repetidas. Entre em contato com o barbeiro.");
+      }
+    }
+
     const endsAt = new Date(startTime.getTime() + service.durationMinutes * 60 * 1000);
 
     const appointment = await AppointmentRepository.create({
@@ -225,6 +233,21 @@ bookingRouter.patch("/:id/status", authMiddleware, requireBarber, async (req: Au
       where: { id: req.params.id },
       data: { status },
     });
+
+    // Lógica de no-show: incrementa contador e bloqueia após 2 faltas
+    if (status === "no_show" && appointment.clientId) {
+      const client = await prisma.client.update({
+        where: { id: appointment.clientId },
+        data: { noShowCount: { increment: 1 } },
+      });
+      if (client.noShowCount >= 2) {
+        await prisma.client.update({
+          where: { id: appointment.clientId },
+          data: { isBlocked: true },
+        });
+      }
+    }
+
     res.json(updated);
   } catch (err) {
     if (err instanceof z.ZodError) {

@@ -33,12 +33,20 @@ export interface Review {
 export interface Appointment {
   id: string;
   clientName: string;
+  clientPhone?: string;
   startsAt: string;
   serviceId: string;
   status: AppointmentStatus;
   service?: Service;
   barber?: Pick<Barber, "id" | "name" | "slug" | "avatarUrl">;
   review?: Review | null;
+}
+
+export interface Expense {
+  id: string;
+  description: string;
+  amountInCents: number;
+  date: string;
 }
 
 export interface ScheduleBlock {

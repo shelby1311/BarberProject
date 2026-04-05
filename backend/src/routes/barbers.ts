@@ -15,7 +15,7 @@ barberRouter.get("/me/dashboard", authMiddleware, requireBarber, async (req: Aut
       where: { id: req.barberId },
       include: {
         services: true, gallery: true, workingHours: true, scheduleBlocks: true,
-        appointments: { include: { service: true }, orderBy: { startsAt: "asc" } },
+        appointments: { include: { service: true, client: { select: { phone: true } } }, orderBy: { startsAt: "asc" } },
         reviews: true,
       },
     });
@@ -42,6 +42,10 @@ barberRouter.get("/me/dashboard", authMiddleware, requireBarber, async (req: Aut
 
     res.json({
       ...barber,
+      appointments: barber.appointments.map((a) => ({
+        ...a,
+        clientPhone: a.client?.phone ?? null,
+      })),
       metrics: {
         monthlyRevenueInCents: monthlyRevenue,
         totalCompleted: completed.length,
@@ -255,22 +259,28 @@ barberRouter.get("/me/export", authMiddleware, requireBarber, async (req: AuthRe
     const from = new Date(year, mon - 1, 1);
     const to = new Date(year, mon, 0, 23, 59, 59);
 
+    const barber = await prisma.barber.findUnique({ where: { id: req.barberId } });
+    const commissionPct = barber?.commissionPct ?? 50;
+
     const appointments = await prisma.appointment.findMany({
       where: { barberId: req.barberId, startsAt: { gte: from, lte: to } },
       include: { service: true },
       orderBy: { startsAt: "asc" },
     });
 
-    const header = "Data,Hora,Cliente,Serviço,Duração(min),Preço(R$),Status";
+    const header = "Data,Hora,Cliente,Serviço,Duração(min),Preço(R$),Comissão(R$),Status";
     const rows = appointments.map((a) => {
       const d = new Date(a.startsAt);
+      const price = a.service?.priceInCents ?? 0;
+      const commission = ((price * commissionPct) / 100 / 100).toFixed(2);
       return [
         d.toLocaleDateString("pt-BR"),
         d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
         `"${a.clientName}"`,
         `"${a.service?.name ?? ""}"`,
         a.service?.durationMinutes ?? "",
-        a.service ? (a.service.priceInCents / 100).toFixed(2) : "",
+        price ? (price / 100).toFixed(2) : "",
+        commission,
         a.status,
       ].join(",");
     });
@@ -278,6 +288,41 @@ barberRouter.get("/me/export", authMiddleware, requireBarber, async (req: AuthRe
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="agenda-${month}.csv"`);
     res.send([header, ...rows].join("\n"));
+  } catch (err) { next(err); }
+});
+
+// Despesas — CRUD
+barberRouter.get("/me/expenses", authMiddleware, requireBarber, async (req: AuthRequest, res, next) => {
+  try {
+    const { month } = req.query as { month?: string };
+    const where: Record<string, unknown> = { barberId: req.barberId };
+    if (month) where.date = { startsWith: month };
+    const expenses = await prisma.expense.findMany({ where, orderBy: { date: "desc" } });
+    res.json(expenses);
+  } catch (err) { next(err); }
+});
+
+barberRouter.post("/me/expenses", authMiddleware, requireBarber, async (req: AuthRequest, res, next) => {
+  try {
+    const { description, amountInCents, date } = z.object({
+      description: z.string().min(1),
+      amountInCents: z.number().int().positive(),
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    }).parse(req.body);
+    const expense = await prisma.expense.create({
+      data: { id: require("crypto").randomUUID(), barberId: req.barberId!, description, amountInCents, date },
+    });
+    res.status(201).json(expense);
+  } catch (err) {
+    if (err instanceof z.ZodError) return res.status(400).json({ message: err.issues[0].message });
+    next(err);
+  }
+});
+
+barberRouter.delete("/me/expenses/:id", authMiddleware, requireBarber, async (req: AuthRequest, res, next) => {
+  try {
+    await prisma.expense.deleteMany({ where: { id: req.params.id, barberId: req.barberId } });
+    res.status(204).send();
   } catch (err) { next(err); }
 });
 

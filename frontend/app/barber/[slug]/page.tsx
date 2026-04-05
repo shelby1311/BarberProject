@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, notFound } from "next/navigation";
 import Image from "next/image";
-import { MapPin, Link2, Phone, Clock, Star, X, ChevronLeft, ChevronRight, Share2 } from "lucide-react";
+import { MapPin, Link2, Phone, Clock, Star, X, ChevronLeft, ChevronRight, Share2, MessageCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Header } from "@/components/Header";
 import { ServiceList } from "@/presentation/components/ServiceList";
@@ -199,7 +199,14 @@ export default function BarberPage() {
                 </a>
               )}
               {barber.phone && (
-                <span className="flex items-center gap-1"><Phone size={13} />{barber.phone}</span>
+                <a
+                  href={`https://wa.me/55${barber.phone.replace(/\D/g, "")}?text=${encodeURIComponent(`Olá ${barber.name}, vi seu perfil no BarberFlow e gostaria de agendar um horário!`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 transition"
+                >
+                  <MessageCircle size={13} />{barber.phone}
+                </a>
               )}
             </div>
           </div>

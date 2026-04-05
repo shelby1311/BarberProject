@@ -1,4 +1,4 @@
-import { Barber, BookingPayload, BookingResult, AuthResponse, Appointment, Review, ScheduleBlock, OccupancyMetric, SubscriptionPlan } from "@/types";
+import { Barber, BookingPayload, BookingResult, AuthResponse, Appointment, Review, ScheduleBlock, OccupancyMetric, SubscriptionPlan, Expense } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -92,6 +92,15 @@ export const api = {
 
   getOccupancy: (date: string) =>
     apiFetch<OccupancyMetric>(`/api/barbers/me/occupancy?date=${date}`),
+
+  getExpenses: (month: string) =>
+    apiFetch<Expense[]>(`/api/barbers/me/expenses?month=${month}`),
+
+  addExpense: (data: { description: string; amountInCents: number; date: string }) =>
+    apiFetch<Expense>("/api/barbers/me/expenses", { method: "POST", body: JSON.stringify(data) }),
+
+  deleteExpense: (id: string) =>
+    apiFetch<void>(`/api/barbers/me/expenses/${id}`, { method: "DELETE" }),
 
   exportAgenda: (month: string) =>
     `${API_URL}/api/barbers/me/export?month=${month}`,

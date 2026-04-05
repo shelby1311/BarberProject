@@ -6,13 +6,13 @@ import Image from "next/image";
 import { io } from "socket.io-client";
 import {
   Scissors, MapPin, Link2, Phone, Plus, Trash2,
-  Save, Image as ImageIcon, ExternalLink, Clock, Check, CalendarDays, User, Calendar
+  Save, Image as ImageIcon, ExternalLink, Clock, Check, CalendarDays, User, Calendar, MessageCircle, TrendingDown, TrendingUp, DollarSign
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Header } from "@/components/Header";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import { Barber, Service, Appointment, WorkingHour } from "@/types";
+import { Barber, Service, Appointment, WorkingHour, Expense } from "@/types";
 
 const brl = (c: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(c / 100);
@@ -53,6 +53,12 @@ export default function DashboardPage() {
   const [feedback, setFeedback] = useState("");
   const [savingServices, setSavingServices] = useState(false);
   const [liveToast, setLiveToast] = useState<string | null>(null);
+
+  // Gestão financeira
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [newExpense, setNewExpense] = useState({ description: "", amount: "", date: new Date().toISOString().split("T")[0] });
+  const [savingExpense, setSavingExpense] = useState(false);
 
   // Horários de trabalho
   const DAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
@@ -100,7 +106,6 @@ export default function DashboardPage() {
         coverUrl: d.coverUrl ?? "", avatarUrl: d.avatarUrl ?? "",
         instagram: d.instagram ?? "", phone: d.phone ?? "",
       });
-      // Marca os presets que o barbeiro já tem cadastrado
       setPresets((prev) => {
         const next = { ...prev };
         d.services.forEach((s: Service) => {
@@ -116,6 +121,7 @@ export default function DashboardPage() {
       });
       if (d.workingHours && d.workingHours.length > 0) setWorkingHours(d.workingHours);
     }).finally(() => setLoading(false));
+    api.getExpenses(currentMonth).then(setExpenses).catch(() => {});
   }, [authBarber]);
 
   async function saveProfile() {
@@ -221,6 +227,34 @@ export default function DashboardPage() {
 
   function togglePreset(name: string) {
     setPresets((prev) => ({ ...prev, [name]: { ...prev[name], selected: !prev[name].selected } }));
+  }
+
+  async function addExpense() {
+    if (!newExpense.description || !newExpense.amount || !newExpense.date) return;
+    setSavingExpense(true);
+    try {
+      const expense = await api.addExpense({
+        description: newExpense.description,
+        amountInCents: Math.round(parseFloat(newExpense.amount) * 100),
+        date: newExpense.date,
+      });
+      setExpenses((prev) => [expense, ...prev]);
+      setNewExpense({ description: "", amount: "", date: new Date().toISOString().split("T")[0] });
+    } finally {
+      setSavingExpense(false);
+    }
+  }
+
+  async function removeExpense(id: string) {
+    await api.deleteExpense(id);
+    setExpenses((prev) => prev.filter((e) => e.id !== id));
+  }
+
+  function whatsappLink(phone: string, clientName: string, serviceName: string, startsAt: string) {
+    const time = new Date(startsAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    const date = new Date(startsAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "long" });
+    const msg = encodeURIComponent(`Olá ${clientName}! Confirmo seu horário para ${serviceName} no dia ${date} às ${time}. Te esperamos! ✂️`);
+    return `https://wa.me/55${phone.replace(/\D/g, "")}?text=${msg}`;
   }
 
   if (authLoading || loading) {
@@ -555,13 +589,26 @@ export default function DashboardPage() {
                             </p>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <p className="text-sm font-semibold text-amber-400">
-                            {date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-                          </p>
-                          <p className="text-xs text-zinc-500">
-                            {date.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
-                          </p>
+                        <div className="flex items-center gap-3">
+                          <div className="text-right">
+                            <p className="text-sm font-semibold text-amber-400">
+                              {date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                            </p>
+                            <p className="text-xs text-zinc-500">
+                              {date.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
+                            </p>
+                          </div>
+                          {a.clientPhone && (
+                            <a
+                              href={whatsappLink(a.clientPhone, a.clientName, service?.name ?? "Serviço", a.startsAt)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title="Confirmar via WhatsApp"
+                              className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition"
+                            >
+                              <MessageCircle size={15} />
+                            </a>
+                          )}
                         </div>
                       </div>
                     );
@@ -569,6 +616,93 @@ export default function DashboardPage() {
               </div>
             </section>
           )}
+
+          {/* Gestão Financeira */}
+          <section className="rounded-3xl border border-white/5 bg-zinc-900 p-6">
+            <h2 className="mb-2 flex items-center gap-2 font-bold text-white">
+              <DollarSign size={16} className="text-amber-500" /> Fluxo de Caixa
+            </h2>
+            <p className="mb-5 text-xs text-zinc-500">{new Date().toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}</p>
+
+            {/* Resumo */}
+            {(() => {
+              const revenue = data.metrics?.monthlyRevenueInCents ?? 0;
+              const totalExpenses = expenses.reduce((s, e) => s + e.amountInCents, 0);
+              const net = revenue - totalExpenses;
+              return (
+                <div className="mb-5 grid grid-cols-3 gap-3">
+                  <div className="rounded-2xl border border-white/5 bg-zinc-800 px-4 py-3">
+                    <p className="text-xs text-zinc-500">Faturamento</p>
+                    <p className="mt-1 text-base font-bold text-emerald-400">{brl(revenue)}</p>
+                  </div>
+                  <div className="rounded-2xl border border-white/5 bg-zinc-800 px-4 py-3">
+                    <p className="text-xs text-zinc-500">Despesas</p>
+                    <p className="mt-1 text-base font-bold text-red-400">{brl(totalExpenses)}</p>
+                  </div>
+                  <div className={`rounded-2xl border px-4 py-3 ${
+                    net >= 0 ? "border-emerald-500/20 bg-emerald-950/30" : "border-red-500/20 bg-red-950/30"
+                  }`}>
+                    <p className="text-xs text-zinc-500">Saldo Líquido</p>
+                    <p className={`mt-1 text-base font-bold ${net >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                      {net >= 0 ? <TrendingUp size={14} className="mr-1 inline" /> : <TrendingDown size={14} className="mr-1 inline" />}
+                      {brl(Math.abs(net))}
+                    </p>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Lista de despesas */}
+            {expenses.length > 0 && (
+              <div className="mb-4 flex flex-col gap-2">
+                {expenses.map((e) => (
+                  <div key={e.id} className="flex items-center justify-between rounded-xl border border-white/5 bg-zinc-800 px-4 py-2.5">
+                    <div>
+                      <p className="text-sm text-white">{e.description}</p>
+                      <p className="text-xs text-zinc-500">{new Date(e.date + "T12:00:00").toLocaleDateString("pt-BR")}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-semibold text-red-400">{brl(e.amountInCents)}</span>
+                      <button onClick={() => removeExpense(e.id)} className="text-zinc-600 hover:text-red-400 transition">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Adicionar despesa */}
+            <div className="flex gap-2">
+              <input
+                placeholder="Descrição (ex: Aluguel)"
+                value={newExpense.description}
+                onChange={(e) => setNewExpense({ ...newExpense, description: e.target.value })}
+                className="flex-1 rounded-xl border border-white/10 bg-zinc-800 px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:border-amber-500/50 focus:outline-none"
+              />
+              <input
+                placeholder="R$"
+                type="number"
+                step="0.01"
+                value={newExpense.amount}
+                onChange={(e) => setNewExpense({ ...newExpense, amount: e.target.value })}
+                className="w-24 rounded-xl border border-white/10 bg-zinc-800 px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:border-amber-500/50 focus:outline-none"
+              />
+              <input
+                type="date"
+                value={newExpense.date}
+                onChange={(e) => setNewExpense({ ...newExpense, date: e.target.value })}
+                className="w-36 rounded-xl border border-white/10 bg-zinc-800 px-3 py-2.5 text-sm text-white focus:border-amber-500/50 focus:outline-none"
+              />
+              <button
+                onClick={addExpense}
+                disabled={savingExpense}
+                className="flex items-center gap-1 rounded-xl bg-zinc-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-zinc-600 transition disabled:opacity-60"
+              >
+                <Plus size={15} />
+              </button>
+            </div>
+          </section>
 
           {/* Galeria */}
           <section className="rounded-3xl border border-white/5 bg-zinc-900 p-6">
