@@ -101,10 +101,11 @@ authRouter.post("/register", async (req, res) => {
         role: "client",
         client: { create: { phone: data.phone ?? "" } },
       },
+      include: { client: true },
     });
 
     const token = jwt.sign(
-      { userId: user.id, role: "client" },
+      { userId: user.id, role: "client", clientId: user.client?.id },
       process.env.JWT_SECRET!,
       { expiresIn: "7d" }
     );
@@ -134,7 +135,7 @@ authRouter.post("/login", async (req, res) => {
     const payload =
       user.role === "barber"
         ? { userId: user.id, barberId: user.barber?.id, role: "barber" }
-        : { userId: user.id, role: "client" };
+        : { userId: user.id, clientId: user.client?.id, role: "client" };
 
     const token = jwt.sign(payload, process.env.JWT_SECRET!, { expiresIn: "7d" });
 

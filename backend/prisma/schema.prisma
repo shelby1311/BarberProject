@@ -22,30 +22,43 @@ model User {
 }
 
 model Client {
-  id     String @id @default(cuid())
-  userId String @unique @map("user_id")
-  phone  String @default("")
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id           String        @id @default(cuid())
+  userId       String        @unique @map("user_id")
+  phone        String        @default("")
+  points       Int           @default(0)
+  favorites    String        @default("") @map("favorite_barber_ids") // JSON array de IDs
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+  reviews      Review[]
 
   @@map("clients")
 }
 
 model Barber {
-  id           String         @id @default(cuid())
-  userId       String         @unique @map("user_id")
-  name         String
-  location     String         @default("")
-  slug         String         @unique
-  bio          String         @default("")
-  coverUrl     String         @default("") @map("cover_url")
-  avatarUrl    String         @default("") @map("avatar_url")
-  instagram    String         @default("")
-  phone        String         @default("")
-  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  services     Service[]
-  appointments Appointment[]
-  gallery      GalleryImage[]
-  workingHours WorkingHours[]
+  id              String         @id @default(cuid())
+  userId          String         @unique @map("user_id")
+  name            String
+  location        String         @default("")
+  slug            String         @unique
+  bio             String         @default("")
+  coverUrl        String         @default("") @map("cover_url")
+  avatarUrl       String         @default("") @map("avatar_url")
+  instagram       String         @default("")
+  phone           String         @default("")
+  planType        String         @default("FREE") @map("plan_type")       // FREE | BASIC | QUARTERLY | ANNUAL | FAMILY_MONTHLY | FAMILY_QUARTERLY | FAMILY_ANNUAL
+  planStatus      String         @default("TRIAL") @map("plan_status")    // TRIAL | ACTIVE | EXPIRED | CANCELED
+  planExpiration  DateTime?      @map("plan_expiration")
+  maxStaff        Int            @default(1) @map("max_staff")
+  ownerId         String?        @map("owner_id")
+  owner           Barber?        @relation("BarberStaff", fields: [ownerId], references: [id])
+  staff           Barber[]       @relation("BarberStaff")
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  services        Service[]
+  appointments    Appointment[]
+  gallery         GalleryImage[]
+  workingHours    WorkingHours[]
+  scheduleBlocks  ScheduleBlock[]
+  reviews         Review[]
 
   @@map("barbers")
 }
@@ -73,27 +86,62 @@ model GalleryImage {
 }
 
 model WorkingHours {
-  id        String @id @default(cuid())
-  barberId  String @map("barber_id")
-  dayOfWeek Int    @map("day_of_week") // 0=Dom, 1=Seg ... 6=Sab
-  startTime String @map("start_time") // "08:00"
-  endTime   String @map("end_time")   // "18:00"
-  barber    Barber @relation(fields: [barberId], references: [id], onDelete: Cascade)
+  id           String @id @default(cuid())
+  barberId     String @map("barber_id")
+  dayOfWeek    Int    @map("day_of_week") // 0=Dom, 1=Seg ... 6=Sab
+  startTime    String @map("start_time") // "08:00"
+  endTime      String @map("end_time")   // "18:00"
+  breakStart   String @default("") @map("break_start") // "12:00" ou vazio
+  breakEnd     String @default("") @map("break_end")   // "13:00" ou vazio
+  barber       Barber @relation(fields: [barberId], references: [id], onDelete: Cascade)
 
   @@unique([barberId, dayOfWeek])
   @@map("working_hours")
+}
+
+model ScheduleBlock {
+  id        String   @id @default(cuid())
+  barberId  String   @map("barber_id")
+  date      String   // "2025-12-25"
+  startTime String?  @map("start_time") // "12:00" — bloqueio parcial de horário
+  endTime   String?  @map("end_time")   // "13:00"
+  reason    String   @default("")
+  barber    Barber   @relation(fields: [barberId], references: [id], onDelete: Cascade)
+
+  @@map("schedule_blocks")
 }
 
 model Appointment {
   id          String   @id @default(cuid())
   barberId    String   @map("barber_id")
   serviceId   String   @map("service_id")
+  clientId    String?  @map("client_id")
   clientName  String   @map("client_name")
   startsAt    DateTime @map("starts_at")
+  endsAt      DateTime? @map("ends_at")  // calculado a partir de durationMinutes
+  status      String   @default("pending") // pending | confirmed | completed | cancelled | no_show
+  pointsAwarded Boolean @default(false) @map("points_awarded")
   createdAt   DateTime @default(now()) @map("created_at")
   barber      Barber   @relation(fields: [barberId], references: [id])
   service     Service  @relation(fields: [serviceId], references: [id])
+  client      Client?  @relation(fields: [clientId], references: [id])
+  review      Review?
 
   @@index([barberId, startsAt])
   @@map("appointments")
+}
+
+model Review {
+  id            String      @id @default(cuid())
+  appointmentId String      @unique @map("appointment_id")
+  barberId      String      @map("barber_id")
+  clientId      String      @map("client_id")
+  rating        Int         // 1-5
+  comment       String      @default("")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  barber        Barber      @relation(fields: [barberId], references: [id])
+  client        Client      @relation(fields: [clientId], references: [id])
+
+  @@map("reviews")
 }

@@ -1,4 +1,4 @@
-import { Barber, BookingPayload, BookingResult, AuthResponse } from "@/types";
+import { Barber, BookingPayload, BookingResult, AuthResponse, Appointment, Review, ScheduleBlock, OccupancyMetric, SubscriptionPlan } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -30,8 +30,14 @@ export const api = {
   login: (body: { cpf: string; password: string }) =>
     apiFetch<AuthResponse>("/api/auth/login", { method: "POST", body: JSON.stringify(body) }),
 
-  getBarbers: (search?: string) =>
-    apiFetch<Barber[]>(`/api/barbers${search ? `?search=${encodeURIComponent(search)}` : ""}`),
+  getBarbers: (search?: string, filters?: { service?: string; minRating?: number }) => {
+    const params = new URLSearchParams();
+    if (search) params.set("search", search);
+    if (filters?.service) params.set("service", filters.service);
+    if (filters?.minRating) params.set("minRating", String(filters.minRating));
+    const qs = params.toString();
+    return apiFetch<Barber[]>(`/api/barbers${qs ? `?${qs}` : ""}`);
+  },
 
   getBarber: (slug: string) => apiFetch<Barber>(`/api/barbers/${slug}`),
 
@@ -60,4 +66,56 @@ export const api = {
 
   createBooking: (payload: BookingPayload) =>
     apiFetch<BookingResult>("/api/bookings", { method: "POST", body: JSON.stringify(payload) }),
+
+  cancelBooking: (id: string) =>
+    apiFetch<{ success: boolean; appointment: Appointment }>(`/api/bookings/${id}/cancel`, { method: "PATCH" }),
+
+  updateBookingStatus: (id: string, status: string) =>
+    apiFetch<Appointment>(`/api/bookings/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+
+  getMyBookings: () =>
+    apiFetch<Appointment[]>("/api/bookings/me"),
+
+  submitReview: (appointmentId: string, data: { rating: number; comment: string }) =>
+    apiFetch<Review>(`/api/bookings/${appointmentId}/review`, { method: "POST", body: JSON.stringify(data) }),
+
+  getBarberReviews: (barberId: string) =>
+    apiFetch<{ reviews: Review[]; averageRating: number | null; total: number }>(`/api/bookings/barber/${barberId}/reviews`),
+
+  getBlocks: () => apiFetch<ScheduleBlock[]>("/api/barbers/me/blocks"),
+
+  addBlock: (data: { date: string; reason: string }) =>
+    apiFetch<ScheduleBlock>("/api/barbers/me/blocks", { method: "POST", body: JSON.stringify(data) }),
+
+  deleteBlock: (id: string) =>
+    apiFetch<void>(`/api/barbers/me/blocks/${id}`, { method: "DELETE" }),
+
+  getOccupancy: (date: string) =>
+    apiFetch<OccupancyMetric>(`/api/barbers/me/occupancy?date=${date}`),
+
+  exportAgenda: (month: string) =>
+    `${API_URL}/api/barbers/me/export?month=${month}`,
+
+  getSubscriptionPlans: () =>
+    apiFetch<SubscriptionPlan[]>("/api/subscriptions/plans"),
+
+  subscribe: (planType: string) =>
+    apiFetch<{ success: boolean; planType: string; planExpiration: string }>("/api/subscriptions/subscribe", {
+      method: "POST",
+      body: JSON.stringify({ planType }),
+    }),
+
+  uploadImage: async (file: File): Promise<{ url: string }> => {
+    const token = getToken();
+    const form = new FormData();
+    form.append("image", file);
+    const res = await fetch(`${API_URL}/api/upload`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    const data = await res.json();
+    if (!res.ok) throw data;
+    return data;
+  },
 };

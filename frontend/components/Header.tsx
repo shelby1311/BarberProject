@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Scissors, LogOut, LayoutDashboard } from "lucide-react";
+import { Scissors, LogOut, LayoutDashboard, Heart } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export function Header() {
   const { user, role, logout, isLoading } = useAuth();
@@ -24,11 +25,21 @@ export function Header() {
 
         {!isLoading && (
           <div className="flex items-center gap-3">
+            <ThemeToggle />
             {user ? (
               <>
                 <span className="hidden text-sm text-zinc-500 sm:block">
                   Olá, <span className="font-semibold text-zinc-300">{user.name.split(" ")[0]}</span>
                 </span>
+                {role === "client" && (
+                  <Link
+                    href="/favoritos"
+                    className="flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2 text-sm font-medium text-zinc-300 hover:border-amber-500/40 hover:text-white transition"
+                  >
+                    <Heart size={15} />
+                    Favoritos
+                  </Link>
+                )}
                 {role === "barber" && (
                   <Link
                     href="/dashboard"

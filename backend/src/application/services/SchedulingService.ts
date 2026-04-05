@@ -1,9 +1,22 @@
-const GAP_MS = 40 * 60 * 1000;
+const SLOT_MINUTES = 30;
 
 interface WorkingHour {
   dayOfWeek: number;
   startTime: string; // "08:00"
   endTime: string;   // "18:00"
+  breakStart?: string;
+  breakEnd?: string;
+}
+
+interface PartialBlock {
+  date: string;
+  startTime?: string | null;
+  endTime?: string | null;
+}
+
+function timeToMinutes(t: string): number {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
 }
 
 function lowerBound(sorted: number[], target: number): number {
@@ -15,55 +28,90 @@ function lowerBound(sorted: number[], target: number): number {
   return lo;
 }
 
+/**
+ * Retorna os slots disponíveis para uma data, respeitando:
+ * - Horário de trabalho do barbeiro
+ * - Duração do serviço (ocupa N slots de 30min sequenciais)
+ * - Bloqueios parciais de horário (ex: almoço 12:00–13:00)
+ * - Agendamentos existentes (com suas durações)
+ */
 export function getAvailableSlots(
   requestedDate: Date,
-  existingBookings: { startsAt: Date }[],
-  workingHours?: WorkingHour[]
+  existingBookings: { startsAt: Date; endsAt?: Date | null; service?: { durationMinutes: number } | null }[],
+  workingHours?: WorkingHour[],
+  serviceDurationMinutes: number = SLOT_MINUTES,
+  scheduleBlocks?: PartialBlock[]
 ): Date[] {
   const day = new Date(requestedDate);
   day.setHours(0, 0, 0, 0);
-
   const dayOfWeek = day.getDay();
+  const dateStr = day.toISOString().split("T")[0];
 
-  // Determina horário de trabalho para o dia
-  let startHour = 8, startMin = 0, endHour = 20, endMin = 0;
+  // Horário de trabalho
+  let startMin = 8 * 60, endMin = 20 * 60;
+  let breakStartMin: number | null = null, breakEndMin: number | null = null;
+
   if (workingHours && workingHours.length > 0) {
     const wh = workingHours.find((w) => w.dayOfWeek === dayOfWeek);
-    if (!wh) return []; // barbeiro não trabalha nesse dia
-    const [sh, sm] = wh.startTime.split(":").map(Number);
-    const [eh, em] = wh.endTime.split(":").map(Number);
-    startHour = sh; startMin = sm; endHour = eh; endMin = em;
+    if (!wh) return [];
+    startMin = timeToMinutes(wh.startTime);
+    endMin = timeToMinutes(wh.endTime);
+    if (wh.breakStart && wh.breakEnd) {
+      breakStartMin = timeToMinutes(wh.breakStart);
+      breakEndMin = timeToMinutes(wh.breakEnd);
+    }
   }
 
-  const sortedTimes = existingBookings
+  // Bloqueios parciais de horário para o dia
+  const partialBlocks: { start: number; end: number }[] = [];
+  if (scheduleBlocks) {
+    for (const b of scheduleBlocks) {
+      if (b.date !== dateStr) continue;
+      if (b.startTime && b.endTime) {
+        partialBlocks.push({ start: timeToMinutes(b.startTime), end: timeToMinutes(b.endTime) });
+      }
+    }
+  }
+
+  // Intervalos ocupados pelos agendamentos existentes (considera duração real)
+  const bookedRanges: { start: number; end: number }[] = existingBookings
     .filter((b) => {
       const d = new Date(b.startsAt);
       d.setHours(0, 0, 0, 0);
       return d.getTime() === day.getTime();
     })
-    .map((b) => new Date(b.startsAt).getTime())
-    .sort((a, b) => a - b);
+    .map((b) => {
+      const s = new Date(b.startsAt);
+      const startM = s.getHours() * 60 + s.getMinutes();
+      const duration = b.service?.durationMinutes ?? SLOT_MINUTES;
+      const endM = b.endsAt
+        ? new Date(b.endsAt).getHours() * 60 + new Date(b.endsAt).getMinutes()
+        : startM + duration;
+      return { start: startM, end: endM };
+    });
 
+  const slotsNeeded = Math.ceil(serviceDurationMinutes / SLOT_MINUTES);
   const slots: Date[] = [];
-  const endMs = endHour * 60 + endMin;
 
-  let h = startHour, m = startMin;
-  while (h * 60 + m < endMs) {
-    const candidate = new Date(day);
-    candidate.setHours(h, m, 0, 0);
-    const t = candidate.getTime();
+  for (let cur = startMin; cur + serviceDurationMinutes <= endMin; cur += SLOT_MINUTES) {
+    const slotEnd = cur + serviceDurationMinutes;
 
-    const idx = lowerBound(sortedTimes, t);
-    const prevTime = sortedTimes[idx - 1];
-    const nextTime = sortedTimes[idx];
+    // Verifica se o bloco de tempo do serviço está livre
+    const overlapsBreak =
+      breakStartMin !== null &&
+      breakEndMin !== null &&
+      cur < breakEndMin &&
+      slotEnd > breakStartMin;
 
-    const clearBefore = prevTime === undefined || t - prevTime >= GAP_MS;
-    const clearAfter = nextTime === undefined || nextTime - t >= GAP_MS;
+    const overlapsPartialBlock = partialBlocks.some((b) => cur < b.end && slotEnd > b.start);
 
-    if (clearBefore && clearAfter) slots.push(candidate);
+    const overlapsBooking = bookedRanges.some((b) => cur < b.end && slotEnd > b.start);
 
-    m += 40;
-    if (m >= 60) { h += Math.floor(m / 60); m = m % 60; }
+    if (!overlapsBreak && !overlapsPartialBlock && !overlapsBooking) {
+      const candidate = new Date(day);
+      candidate.setHours(Math.floor(cur / 60), cur % 60, 0, 0);
+      slots.push(candidate);
+    }
   }
 
   return slots;
