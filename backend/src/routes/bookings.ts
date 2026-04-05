@@ -14,6 +14,7 @@ import {
   SlotTakenException,
 } from "../shared/AppError";
 import { authMiddleware, requireBarber, requireClient, AuthRequest } from "../shared/authMiddleware";
+import { io } from "../server";
 
 export const bookingRouter = Router();
 
@@ -112,6 +113,13 @@ bookingRouter.post("/", async (req, res, next) => {
 
     console.log(`[BOOKING] Novo agendamento: ${clientName} com ${barber.name} às ${startTime.toISOString()} — Serviço: ${service.name} — R$ ${(finalPriceInCents / 100).toFixed(2)}`);
 
+    // Notifica dashboard do barbeiro em tempo real
+    io.to(`barber:${barberId}`).emit("booking:new", {
+      appointmentId: appointment.id,
+      clientName,
+      serviceName: service.name,
+      startsAt: startTime.toISOString(),
+    });
     res.status(201).json({
       success: true,
       appointmentId: appointment.id,

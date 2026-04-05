@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { io } from "socket.io-client";
 import {
   Scissors, MapPin, Link2, Phone, Plus, Trash2,
   Save, Image as ImageIcon, ExternalLink, Clock, Check, CalendarDays, User, Calendar
@@ -51,6 +52,7 @@ export default function DashboardPage() {
   const [newImage, setNewImage] = useState({ url: "", caption: "" });
   const [feedback, setFeedback] = useState("");
   const [savingServices, setSavingServices] = useState(false);
+  const [liveToast, setLiveToast] = useState<string | null>(null);
 
   // Horários de trabalho
   const DAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
@@ -71,6 +73,23 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!authLoading && !authBarber) router.push("/login");
   }, [authBarber, authLoading, router]);
+
+  // Socket.io — atualizações em tempo real no dashboard
+  useEffect(() => {
+    if (!authBarber?.id) return;
+    const socket = io(process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001", {
+      transports: ["websocket"],
+    });
+    socket.emit("join:barber", authBarber.id);
+    socket.on("booking:new", (payload: { clientName: string; serviceName: string; startsAt: string }) => {
+      const time = new Date(payload.startsAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+      setLiveToast(`📅 Novo agendamento: ${payload.clientName} — ${payload.serviceName} às ${time}`);
+      setTimeout(() => setLiveToast(null), 6000);
+      // Recarrega agendamentos
+      api.getDashboard().then((d) => setData(d));
+    });
+    return () => { socket.disconnect(); };
+  }, [authBarber?.id]);
 
   useEffect(() => {
     if (!authBarber) return;
@@ -241,6 +260,17 @@ export default function DashboardPage() {
             <ExternalLink size={14} /> Ver página pública
           </a>
         </div>
+
+        <AnimatePresence>
+          {liveToast && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              className="mb-4 rounded-xl border border-amber-500/30 bg-amber-950/40 px-4 py-3 text-sm text-amber-300"
+            >
+              {liveToast}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <AnimatePresence>
           {feedback && (

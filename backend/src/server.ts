@@ -2,6 +2,8 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import path from "path";
+import http from "http";
+import { Server as SocketServer } from "socket.io";
 import rateLimit from "express-rate-limit";
 import multer from "multer";
 import cron from "node-cron";
@@ -15,6 +17,16 @@ import { prisma } from "./infra/db/connection";
 dotenv.config();
 
 const app = express();
+const httpServer = http.createServer(app);
+export const io = new SocketServer(httpServer, {
+  cors: { origin: process.env.FRONTEND_URL ?? "http://localhost:3000" },
+});
+
+io.on("connection", (socket) => {
+  // Barbeiro entra na sala do seu próprio dashboard
+  socket.on("join:barber", (barberId: string) => socket.join(`barber:${barberId}`));
+});
+
 const PORT = process.env.PORT ?? 3001;
 
 app.use(cors({ origin: process.env.FRONTEND_URL ?? "http://localhost:3000" }));
@@ -49,8 +61,16 @@ const upload = multer({
   },
 });
 
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  message: { success: false, code: "RATE_LIMIT", message: "Muitas tentativas de upload. Aguarde 1 minuto." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Rota de upload de imagem (avatar ou capa)
-app.post("/api/upload", upload.single("image"), (req, res) => {
+app.post("/api/upload", uploadLimiter, upload.single("image"), (req, res) => {
   if (!req.file) return res.status(400).json({ message: "Nenhuma imagem enviada." });
   const url = `${process.env.BACKEND_URL ?? `http://localhost:${PORT}`}/uploads/${req.file.filename}`;
   res.json({ url });
@@ -92,6 +112,6 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
   res.status(500).json({ success: false, code: "INTERNAL_ERROR", message: "Erro interno do servidor." });
 });
 
-app.listen(PORT, () => {
+httpServer.listen(PORT, () => {
   console.log(`🚀 Backend rodando em http://localhost:${PORT}`);
 });

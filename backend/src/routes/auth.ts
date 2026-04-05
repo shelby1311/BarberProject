@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { prisma } from "../infra/db/connection";
@@ -145,6 +146,54 @@ authRouter.post("/login", async (req, res) => {
       barber: user.barber ?? null,
       user: { id: user.id, name: user.name, email: user.email, cpf: user.cpf },
     });
+  } catch (err) {
+    if (err instanceof z.ZodError) return res.status(400).json({ message: err.issues[0].message });
+    res.status(500).json({ message: "Erro interno." });
+  }
+});
+
+// Mapa em memória: token → { userId, expiresAt }
+// Em produção, persista no banco ou use Redis
+const resetTokens = new Map<string, { userId: string; expiresAt: number }>();
+
+// POST /api/auth/forgot-password
+authRouter.post("/forgot-password", async (req, res) => {
+  try {
+    const { email } = z.object({ email: z.string().email() }).parse(req.body);
+    const user = await prisma.user.findFirst({ where: { email } });
+    // Resposta genérica para não vazar se o e-mail existe
+    if (!user) return res.json({ message: "Se o e-mail estiver cadastrado, você receberá as instruções." });
+
+    const token = randomUUID();
+    resetTokens.set(token, { userId: user.id, expiresAt: Date.now() + 15 * 60 * 1000 }); // 15 min
+
+    // Em produção: envie por e-mail (nodemailer/SES). Aqui logamos para desenvolvimento.
+    console.log(`[RESET] Token para ${email}: ${token}`);
+    res.json({ message: "Se o e-mail estiver cadastrado, você receberá as instruções.", _devToken: token });
+  } catch (err) {
+    if (err instanceof z.ZodError) return res.status(400).json({ message: err.issues[0].message });
+    res.status(500).json({ message: "Erro interno." });
+  }
+});
+
+// POST /api/auth/reset-password
+authRouter.post("/reset-password", async (req, res) => {
+  try {
+    const { token, password } = z.object({
+      token: z.string().uuid(),
+      password: z.string().min(6, "Senha deve ter ao menos 6 caracteres."),
+    }).parse(req.body);
+
+    const entry = resetTokens.get(token);
+    if (!entry || entry.expiresAt < Date.now()) {
+      return res.status(400).json({ message: "Token inválido ou expirado." });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    await prisma.user.update({ where: { id: entry.userId }, data: { passwordHash } });
+    resetTokens.delete(token);
+
+    res.json({ message: "Senha redefinida com sucesso." });
   } catch (err) {
     if (err instanceof z.ZodError) return res.status(400).json({ message: err.issues[0].message });
     res.status(500).json({ message: "Erro interno." });
