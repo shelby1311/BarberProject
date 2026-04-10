@@ -129,7 +129,7 @@ barberRouter.get("/", async (req, res, next) => {
     });
     const ratingMap = Object.fromEntries(ratingAggs.map((r) => [r.barberId, r]));
 
-    res.setHeader("Cache-Control", "public, max-age=30, stale-while-revalidate=60");
+    res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=120");
     res.json(barbers.map((b) => ({
       ...b,
       averageRating: ratingMap[b.id]?._avg.rating ?? null,

@@ -220,7 +220,7 @@ export function BookingCalendar({ barberId, barberSlug, services, initialSlots, 
             </div>
 
             {loading ? (
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5">
                 {Array.from({ length: 8 }).map((_, i) => (
                   <div key={i} className="h-10 animate-pulse rounded-xl bg-zinc-800" />
                 ))}
@@ -228,7 +228,7 @@ export function BookingCalendar({ barberId, barberSlug, services, initialSlots, 
             ) : slots.length === 0 ? (
               <p className="text-sm text-zinc-600">Nenhum horário disponível neste dia.</p>
             ) : (
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5">
                 {slots.map((s) => (
                   <button
                     key={s.toISOString()}

@@ -5,15 +5,15 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { io } from "socket.io-client";
 import {
-  Scissors, MapPin, Link2, Phone, Plus, Trash2,
-  Save, Image as ImageIcon, ExternalLink, Clock, Check, CalendarDays, User, Calendar, MessageCircle, TrendingDown, TrendingUp, DollarSign, ShieldOff, Copy, CheckCheck, BarChart2, Users, Percent
+  Scissors, Plus, Trash2,
+  Save, Image as ImageIcon, ExternalLink, Clock, Check, CalendarDays, User, Calendar, MessageCircle, ShieldOff, Copy, CheckCheck, Inbox, X
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Header } from "@/components/Header";
+import { ImageUpload } from "@/components/ImageUpload";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import { Barber, Service, Appointment, WorkingHour, Expense, BlockedClient, MonthlyMetric } from "@/types";
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
+import { Barber, Service, Appointment, WorkingHour, BlockedClient } from "@/types";
 
 const brl = (c: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(c / 100);
@@ -65,15 +65,8 @@ export default function DashboardPage() {
     });
   }
 
-  // Gestão financeira
-  const currentMonth = new Date().toISOString().slice(0, 7);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [newExpense, setNewExpense] = useState({ description: "", amount: "", date: new Date().toISOString().split("T")[0] });
-  const [savingExpense, setSavingExpense] = useState(false);
-
   // Clientes bloqueados
   const [blockedClients, setBlockedClients] = useState<BlockedClient[]>([]);
-  const [monthlyMetrics, setMonthlyMetrics] = useState<MonthlyMetric[]>([]);
 
   // Horários de trabalho
   const DAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
@@ -106,8 +99,13 @@ export default function DashboardPage() {
       const time = new Date(payload.startsAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
       setLiveToast(`📅 Novo agendamento: ${payload.clientName} — ${payload.serviceName} às ${time}`);
       setTimeout(() => setLiveToast(null), 6000);
-      // Recarrega agendamentos
       api.getDashboard().then((d) => setData(d));
+    });
+    socket.on("booking:rejected", ({ appointmentId }: { appointmentId: string }) => {
+      setData((d) => d ? {
+        ...d,
+        appointments: d.appointments!.map((a) => a.id === appointmentId ? { ...a, status: "cancelled" as const } : a),
+      } : d);
     });
     return () => { socket.disconnect(); };
   }, [authBarber?.id]);
@@ -136,9 +134,7 @@ export default function DashboardPage() {
       });
       if (d.workingHours && d.workingHours.length > 0) setWorkingHours(d.workingHours);
     }).finally(() => setLoading(false));
-    api.getExpenses(currentMonth).then(setExpenses).catch(() => {});
     api.getBlockedClients().then(setBlockedClients).catch(() => {});
-    api.getMonthlyMetrics().then(setMonthlyMetrics).catch(() => {});
   }, [authBarber, currentMonth]);
 
   async function saveProfile() {
@@ -246,27 +242,6 @@ export default function DashboardPage() {
     setPresets((prev) => ({ ...prev, [name]: { ...prev[name], selected: !prev[name].selected } }));
   }
 
-  async function addExpense() {
-    if (!newExpense.description || !newExpense.amount || !newExpense.date) return;
-    setSavingExpense(true);
-    try {
-      const expense = await api.addExpense({
-        description: newExpense.description,
-        amountInCents: Math.round(parseFloat(newExpense.amount) * 100),
-        date: newExpense.date,
-      });
-      setExpenses((prev) => [expense, ...prev]);
-      setNewExpense({ description: "", amount: "", date: new Date().toISOString().split("T")[0] });
-    } finally {
-      setSavingExpense(false);
-    }
-  }
-
-  async function removeExpense(id: string) {
-    await api.deleteExpense(id);
-    setExpenses((prev) => prev.filter((e) => e.id !== id));
-  }
-
   async function unblockClient(clientId: string) {
     await api.unblockClient(clientId);
     setBlockedClients((prev) => prev.filter((c) => c.id !== clientId));
@@ -277,6 +252,33 @@ export default function DashboardPage() {
     const date = new Date(startsAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "long" });
     const msg = encodeURIComponent(`Olá ${clientName}! Confirmo seu horário para ${serviceName} no dia ${date} às ${time}. Te esperamos! ✂️`);
     return `https://wa.me/55${phone.replace(/\D/g, "")}?text=${msg}`;
+  }
+
+  const [rejecting, setRejecting] = useState<string | null>(null);
+
+  function pendingAppointments() {
+    return (data?.appointments ?? []).filter((a) => a.status === "pending" && new Date(a.startsAt) >= new Date());
+  }
+
+  async function handleReject(id: string) {
+    setRejecting(id);
+    try {
+      await api.rejectBooking(id);
+      setData((d) => d ? {
+        ...d,
+        appointments: d.appointments!.map((a) => a.id === id ? { ...a, status: "cancelled" as const } : a),
+      } : d);
+    } finally {
+      setRejecting(null);
+    }
+  }
+
+  async function handleConfirm(id: string) {
+    await api.updateBookingStatus(id, "confirmed");
+    setData((d) => d ? {
+      ...d,
+      appointments: d.appointments!.map((a) => a.id === id ? { ...a, status: "confirmed" as const } : a),
+    } : d);
   }
 
   if (authLoading || loading) {
@@ -298,20 +300,18 @@ export default function DashboardPage() {
   );
 
   return (
-    <div className="min-h-screen bg-zinc-950">
+    <div className="min-h-screen bg-zinc-950 overflow-x-hidden w-full">
       <Header />
 
-      <div className="mx-auto max-w-4xl px-6 py-10">
+      <div className="mx-auto max-w-5xl px-3 sm:px-6 py-6 w-full">
         {/* Topo */}
-        <div className="mb-8 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-black text-white">Dashboard</h1>
-            <p className="text-sm text-zinc-500">Gerencie sua barbearia</p>
-          </div>
-          <div className="flex items-center gap-2">
+        <div className="mb-8">
+          <h1 className="text-2xl font-black text-white">Dashboard</h1>
+          <p className="mb-3 text-sm text-zinc-500">Gerencie sua barbearia</p>
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={copyPublicLink}
-              className="flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2 text-sm text-zinc-400 hover:border-amber-500/30 hover:text-white active:scale-95 transition-transform select-none"
+              className="flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-sm text-zinc-400 hover:border-amber-500/30 hover:text-white active:scale-95 transition-transform select-none"
               title="Copie e cole no Instagram como link da bio"
             >
               {linkCopied ? <CheckCheck size={14} className="text-emerald-400" /> : <Copy size={14} />}
@@ -320,7 +320,7 @@ export default function DashboardPage() {
             <a
               href={`/barber/${data.slug}`}
               target="_blank"
-              className="flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2 text-sm text-zinc-400 hover:border-amber-500/30 hover:text-white transition"
+              className="flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-sm text-zinc-400 hover:border-amber-500/30 hover:text-white transition"
             >
               <ExternalLink size={14} /> Ver página pública
             </a>
@@ -350,31 +350,98 @@ export default function DashboardPage() {
         </AnimatePresence>
 
         <div className="grid gap-6">
+          {/* Caixa de Entrada */}
+          <section id="caixa-de-entrada" className="rounded-3xl border border-amber-500/30 bg-amber-950/10 p-4 sm:p-6">
+            <h2 className="mb-1 flex items-center gap-2 font-bold text-white">
+              <Inbox size={16} className="text-amber-500" /> Caixa de Entrada
+              {pendingAppointments().length > 0 && (
+                <span className="ml-1 flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-xs font-black text-black">
+                  {pendingAppointments().length}
+                </span>
+              )}
+            </h2>
+            <p className="mb-4 text-xs text-zinc-500">Novos agendamentos aguardando sua confirmação</p>
+            {pendingAppointments().length === 0 ? (
+              <p className="text-sm text-zinc-600">Nenhum agendamento pendente no momento.</p>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {pendingAppointments().map((a) => {
+                  const date = new Date(a.startsAt);
+                  const service = data!.services.find((s) => s.id === a.serviceId);
+                  return (
+                    <div key={a.id} className="rounded-2xl border border-white/10 bg-zinc-900 px-4 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/10">
+                            <User size={15} className="text-amber-500" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-white">{a.clientName}</p>
+                            <p className="text-xs text-zinc-500">{service?.name ?? "Serviço"}</p>
+                            <p className="text-xs font-semibold text-amber-400">
+                              {date.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })} às{" "}
+                              {date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <button
+                            onClick={() => handleConfirm(a.id)}
+                            className="flex items-center gap-1 rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/20 active:scale-95 transition-transform"
+                          >
+                            <Check size={13} /> Confirmar
+                          </button>
+                          <button
+                            onClick={() => handleReject(a.id)}
+                            disabled={rejecting === a.id}
+                            className="flex items-center gap-1 rounded-xl bg-red-500/10 border border-red-500/20 px-3 py-1.5 text-xs font-semibold text-red-400 hover:bg-red-500/20 active:scale-95 transition-transform disabled:opacity-60"
+                          >
+                            <X size={13} /> {rejecting === a.id ? "..." : "Rejeitar"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
           {/* Perfil */}
-          <section className="rounded-3xl border border-white/5 bg-zinc-900 p-6">
+          <section className="rounded-3xl border border-white/5 bg-zinc-900 p-4 sm:p-6">
             <h2 className="mb-5 flex items-center gap-2 font-bold text-white">
               <Scissors size={16} className="text-amber-500" /> Perfil da Barbearia
             </h2>
-            <div className="grid gap-4 sm:grid-cols-2">
-              {[
-                { key: "name",      label: "Nome",              placeholder: "Seu nome" },
-                { key: "location",  label: "Cidade",            placeholder: "São Paulo, SP" },
-                { key: "instagram", label: "Instagram",         placeholder: "@seuperfil" },
-                { key: "phone",     label: "Telefone",          placeholder: "(11) 99999-9999" },
-                { key: "coverUrl",  label: "URL da foto de capa", placeholder: "https://..." },
-                { key: "avatarUrl", label: "URL do avatar",     placeholder: "https://..." },
-              ].map(({ key, label, placeholder }) => (
+            <div className="grid gap-4">
+              {([
+                { key: "name",      label: "Nome",      placeholder: "Seu nome" },
+                { key: "location",  label: "Cidade",    placeholder: "São Paulo, SP" },
+                { key: "instagram", label: "Instagram", placeholder: "@seuperfil" },
+                { key: "phone",     label: "Telefone",  placeholder: "(11) 99999-9999" },
+              ] as { key: keyof typeof profile; label: string; placeholder: string }[]).map(({ key, label, placeholder }) => (
                 <div key={key}>
                   <label className="mb-1.5 block text-xs font-medium text-zinc-400">{label}</label>
                   <input
-                    value={profile[key as keyof typeof profile]}
+                    value={profile[key]}
                     onChange={(e) => setProfile({ ...profile, [key]: e.target.value })}
                     className="w-full rounded-xl border border-white/10 bg-zinc-800 px-4 py-2.5 text-sm text-white placeholder-zinc-600 focus:border-amber-500/50 focus:outline-none"
                     placeholder={placeholder}
                   />
                 </div>
               ))}
-              <div className="sm:col-span-2">
+              <ImageUpload
+                label="Foto de capa"
+                value={profile.coverUrl}
+                onChange={(url) => setProfile({ ...profile, coverUrl: url })}
+                aspect="wide"
+              />
+              <ImageUpload
+                label="Avatar"
+                value={profile.avatarUrl}
+                onChange={(url) => setProfile({ ...profile, avatarUrl: url })}
+                aspect="square"
+              />
+              <div>
                 <label className="mb-1.5 block text-xs font-medium text-zinc-400">Bio</label>
                 <textarea
                   rows={3}
@@ -395,15 +462,15 @@ export default function DashboardPage() {
           </section>
 
           {/* Serviços pré-definidos */}
-          <section className="rounded-3xl border border-white/5 bg-zinc-900 p-6">
-            <div className="mb-5 flex items-center justify-between">
+          <section className="rounded-3xl border border-white/5 bg-zinc-900 p-4 sm:p-6">
+            <div className="mb-5">
               <h2 className="flex items-center gap-2 font-bold text-white">
                 <Scissors size={16} className="text-amber-500" /> Serviços
               </h2>
-              <span className="text-xs text-zinc-500">Marque os que você oferece e ajuste o preço</span>
+              <p className="mt-1 text-xs text-zinc-500">Marque os que você oferece e ajuste o preço</p>
             </div>
 
-            <div className="mb-6 grid gap-3 sm:grid-cols-2">
+            <div className="mb-6 flex flex-col gap-3">
               {PRESET_SERVICES.map((preset) => {
                 const state = presets[preset.name];
                 const isSelected = state.selected;
@@ -516,43 +583,49 @@ export default function DashboardPage() {
 
             {/* Adicionar serviço customizado */}
             <div className="mt-4">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-zinc-500">Adicionar serviço personalizado</p>
-              <div className="flex gap-2">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-zinc-500">Adicionar serviço personalizado</p>
+              <div className="flex flex-col gap-2">
                 <input
                   placeholder="Nome do serviço"
                   value={newService.name}
                   onChange={(e) => setNewService({ ...newService, name: e.target.value })}
-                  className="flex-1 rounded-xl border border-white/10 bg-zinc-800 px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:border-amber-500/50 focus:outline-none"
+                  className="w-full rounded-xl border border-white/10 bg-zinc-800 px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:border-amber-500/50 focus:outline-none"
                 />
-                <input
-                  placeholder="R$"
-                  type="number"
-                  step="0.01"
-                  value={newService.priceInCents}
-                  onChange={(e) => setNewService({ ...newService, priceInCents: e.target.value })}
-                  inputMode="decimal"
-                  className="w-24 rounded-xl border border-white/10 bg-zinc-800 px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:border-amber-500/50 focus:outline-none"
-                />
-                <input
-                  placeholder="Min"
-                  type="number"
-                  value={newService.durationMinutes}
-                  onChange={(e) => setNewService({ ...newService, durationMinutes: e.target.value })}
-                  inputMode="numeric"
-                  className="w-20 rounded-xl border border-white/10 bg-zinc-800 px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:border-amber-500/50 focus:outline-none"
-                />
-                <button
-                  onClick={addCustomService}
-                  className="flex items-center gap-1 rounded-xl bg-zinc-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-zinc-600 active:scale-95 transition-transform"
-                >
-                  <Plus size={15} />
-                </button>
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <label className="mb-1 block text-xs text-zinc-500">Preço (R$)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={newService.priceInCents}
+                      onChange={(e) => setNewService({ ...newService, priceInCents: e.target.value })}
+                      inputMode="decimal"
+                      className="w-full rounded-xl border border-white/10 bg-zinc-800 px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:border-amber-500/50 focus:outline-none"
+                    />
+                  </div>
+                  <div className="w-28">
+                    <label className="mb-1 block text-xs text-zinc-500">Duração (min)</label>
+                    <input
+                      type="number"
+                      value={newService.durationMinutes}
+                      onChange={(e) => setNewService({ ...newService, durationMinutes: e.target.value })}
+                      inputMode="numeric"
+                      className="w-full rounded-xl border border-white/10 bg-zinc-800 px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:border-amber-500/50 focus:outline-none"
+                    />
+                  </div>
+                  <button
+                    onClick={addCustomService}
+                    className="flex items-center gap-1 rounded-xl bg-zinc-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-zinc-600 active:scale-95 transition-transform"
+                  >
+                    <Plus size={15} />
+                  </button>
+                </div>
               </div>
             </div>
           </section>
 
           {/* Horários de trabalho */}
-          <section className="rounded-3xl border border-white/5 bg-zinc-900 p-6">
+          <section className="rounded-3xl border border-white/5 bg-zinc-900 p-4 sm:p-6">
             <h2 className="mb-5 flex items-center gap-2 font-bold text-white">
               <Calendar size={16} className="text-amber-500" /> Horários de Trabalho
             </h2>
@@ -600,7 +673,7 @@ export default function DashboardPage() {
 
           {/* Agendamentos */}
           {data.appointments && data.appointments.length > 0 && (
-            <section className="rounded-3xl border border-white/5 bg-zinc-900 p-6">
+            <section className="rounded-3xl border border-white/5 bg-zinc-900 p-4 sm:p-6">
               <h2 className="mb-5 flex items-center gap-2 font-bold text-white">
                 <CalendarDays size={16} className="text-amber-500" /> Próximos Agendamentos
               </h2>
@@ -652,219 +725,23 @@ export default function DashboardPage() {
             </section>
           )}
 
-          {/* Bento Grid de Métricas */}
-          {data.metrics && (
-            <section>
-              <h2 className="mb-4 flex items-center gap-2 font-bold text-white">
-                <BarChart2 size={16} className="text-amber-500" /> Visão Geral do Mês
-              </h2>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {/* Caixa grande — Faturamento */}
-                <div className="col-span-2 rounded-3xl border border-white/5 bg-zinc-900/50 backdrop-blur-md p-5">
-                  <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500">Faturamento Mensal</p>
-                  <p className="mt-2 text-3xl font-black text-emerald-400">{brl(data.metrics.monthlyRevenueInCents)}</p>
-                  {data.metrics.topServices.length > 0 && (
-                    <div className="mt-4">
-                      <p className="mb-2 text-xs text-zinc-600">Top Serviços</p>
-                      <div className="flex flex-col gap-1.5">
-                        {data.metrics.topServices.slice(0, 3).map((s) => (
-                          <div key={s.name} className="flex items-center justify-between">
-                            <span className="text-xs text-zinc-400">{s.name}</span>
-                            <span className="rounded-lg bg-amber-500/10 px-2 py-0.5 text-xs font-bold text-amber-400">{s.count}x</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Caixa — Total de Clientes */}
-                <div className="rounded-3xl border border-white/5 bg-zinc-900/50 backdrop-blur-md p-5">
-                  <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500">Clientes</p>
-                  <div className="mt-2 flex items-end gap-2">
-                    <p className="text-3xl font-black text-white">{data.metrics.totalCompleted}</p>
-                    <Users size={18} className="mb-1 text-zinc-600" />
-                  </div>
-                  <p className="mt-1 text-xs text-zinc-600">atendimentos concluídos</p>
-                </div>
-
-                {/* Caixa — Avaliação */}
-                <div className="rounded-3xl border border-white/5 bg-zinc-900/50 backdrop-blur-md p-5">
-                  <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500">Avaliação</p>
-                  <div className="mt-2 flex items-end gap-2">
-                    <p className="text-3xl font-black text-amber-400">
-                      {data.metrics.averageRating != null ? data.metrics.averageRating.toFixed(1) : "—"}
-                    </p>
-                    <span className="mb-1 text-xs text-zinc-600">/ 5.0</span>
-                  </div>
-                  <p className="mt-1 text-xs text-zinc-600">{data.metrics.totalReviews} avaliações</p>
-                </div>
-              </div>
-            </section>
-          )}
-
-          {/* Gráfico Faturamento vs Despesas — 6 meses */}
-          {monthlyMetrics.length > 0 && (
-            <section className="rounded-3xl border border-white/5 bg-zinc-900/50 backdrop-blur-md p-6">
-              <h2 className="mb-5 flex items-center gap-2 font-bold text-white">
-                <TrendingUp size={16} className="text-amber-500" /> Faturamento vs Despesas (6 meses)
-              </h2>
-              <ResponsiveContainer width="100%" height={220}>
-                <AreaChart data={monthlyMetrics} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="gradRevenue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#34d399" stopOpacity={0.25} />
-                      <stop offset="95%" stopColor="#34d399" stopOpacity={0} />
-                    </linearGradient>
-                    <linearGradient id="gradExpenses" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#f87171" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="#f87171" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                  <XAxis dataKey="label" tick={{ fill: "#71717a", fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis tickFormatter={(v) => `R$${(v / 100).toFixed(0)}`} tick={{ fill: "#71717a", fontSize: 10 }} axisLine={false} tickLine={false} width={56} />
-                  <Tooltip
-                    contentStyle={{ background: "#18181b", border: "1px solid #27272a", borderRadius: 12, fontSize: 12 }}
-                    labelStyle={{ color: "#a1a1aa" }}
-                    formatter={(value: number, name: string) => [
-                      brl(value),
-                      name === "revenue" ? "Faturamento" : "Despesas",
-                    ]}
-                  />
-                  <Area type="monotone" dataKey="revenue" stroke="#34d399" strokeWidth={2} fill="url(#gradRevenue)" dot={false} />
-                  <Area type="monotone" dataKey="expenses" stroke="#f87171" strokeWidth={2} fill="url(#gradExpenses)" dot={false} />
-                </AreaChart>
-              </ResponsiveContainer>
-              <div className="mt-3 flex items-center gap-4 justify-end">
-                <span className="flex items-center gap-1.5 text-xs text-zinc-500"><span className="h-2 w-4 rounded-full bg-emerald-400" />Faturamento</span>
-                <span className="flex items-center gap-1.5 text-xs text-zinc-500"><span className="h-2 w-4 rounded-full bg-red-400" />Despesas</span>
-              </div>
-            </section>
-          )}
-
-          {/* Calculadora de Ganhos (só para staff com commissionPct) */}
-          {(data as Barber & { commissionPct?: number }).commissionPct != null && (
-            <section className="rounded-3xl border border-amber-500/20 bg-amber-950/10 p-6">
-              <h2 className="mb-4 flex items-center gap-2 font-bold text-white">
-                <Percent size={16} className="text-amber-500" /> Calculadora de Ganhos
-              </h2>
-              {(() => {
-                const commission = (data as Barber & { commissionPct?: number }).commissionPct ?? 0;
-                const revenue = data.metrics?.monthlyRevenueInCents ?? 0;
-                const myShare = Math.round(revenue * (commission / 100));
-                const ownerShare = revenue - myShare;
-                return (
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="rounded-2xl border border-white/5 bg-zinc-900 px-4 py-3">
-                      <p className="text-xs text-zinc-500">Faturamento Total</p>
-                      <p className="mt-1 text-base font-bold text-white">{brl(revenue)}</p>
-                    </div>
-                    <div className="rounded-2xl border border-emerald-500/20 bg-emerald-950/30 px-4 py-3">
-                      <p className="text-xs text-zinc-500">Minha parte ({commission}%)</p>
-                      <p className="mt-1 text-base font-bold text-emerald-400">{brl(myShare)}</p>
-                    </div>
-                    <div className="rounded-2xl border border-white/5 bg-zinc-900 px-4 py-3">
-                      <p className="text-xs text-zinc-500">Parte do dono</p>
-                      <p className="mt-1 text-base font-bold text-zinc-400">{brl(ownerShare)}</p>
-                    </div>
-                  </div>
-                );
-              })()}
-            </section>
-          )}
-
-          {/* Gestão Financeira */}
-          <section className="rounded-3xl border border-white/5 bg-zinc-900 p-6">
-            <h2 className="mb-2 flex items-center gap-2 font-bold text-white">
-              <DollarSign size={16} className="text-amber-500" /> Fluxo de Caixa
-            </h2>
-            <p className="mb-5 text-xs text-zinc-500">{new Date().toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}</p>
-
-            {/* Resumo */}
-            {(() => {
-              const revenue = data.metrics?.monthlyRevenueInCents ?? 0;
-              const totalExpenses = expenses.reduce((s, e) => s + e.amountInCents, 0);
-              const net = revenue - totalExpenses;
-              return (
-                <div className="mb-5 grid grid-cols-3 gap-3">
-                  <div className="rounded-2xl border border-white/5 bg-zinc-800 px-4 py-3">
-                    <p className="text-xs text-zinc-500">Faturamento</p>
-                    <p className="mt-1 text-base font-bold text-emerald-400">{brl(revenue)}</p>
-                  </div>
-                  <div className="rounded-2xl border border-white/5 bg-zinc-800 px-4 py-3">
-                    <p className="text-xs text-zinc-500">Despesas</p>
-                    <p className="mt-1 text-base font-bold text-red-400">{brl(totalExpenses)}</p>
-                  </div>
-                  <div className={`rounded-2xl border px-4 py-3 ${
-                    net >= 0 ? "border-emerald-500/20 bg-emerald-950/30" : "border-red-500/20 bg-red-950/30"
-                  }`}>
-                    <p className="text-xs text-zinc-500">Saldo Líquido</p>
-                    <p className={`mt-1 text-base font-bold ${net >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                      {net >= 0 ? <TrendingUp size={14} className="mr-1 inline" /> : <TrendingDown size={14} className="mr-1 inline" />}
-                      {brl(Math.abs(net))}
-                    </p>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Lista de despesas */}
-            {expenses.length > 0 && (
-              <div className="mb-4 flex flex-col gap-2">
-                {expenses.map((e) => (
-                  <div key={e.id} className="flex items-center justify-between rounded-xl border border-white/5 bg-zinc-800 px-4 py-2.5">
-                    <div>
-                      <p className="text-sm text-white">{e.description}</p>
-                      <p className="text-xs text-zinc-500">{new Date(e.date + "T12:00:00").toLocaleDateString("pt-BR")}</p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm font-semibold text-red-400">{brl(e.amountInCents)}</span>
-                      <button onClick={() => removeExpense(e.id)} className="text-zinc-600 hover:text-red-400 transition">
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Adicionar despesa */}
-            <div className="flex gap-2">
-              <input
-                placeholder="Descrição (ex: Aluguel)"
-                value={newExpense.description}
-                onChange={(e) => setNewExpense({ ...newExpense, description: e.target.value })}
-                className="flex-1 rounded-xl border border-white/10 bg-zinc-800 px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:border-amber-500/50 focus:outline-none"
-              />
-              <input
-                placeholder="R$"
-                type="number"
-                step="0.01"
-                value={newExpense.amount}
-                onChange={(e) => setNewExpense({ ...newExpense, amount: e.target.value })}
-                inputMode="decimal"
-                className="w-24 rounded-xl border border-white/10 bg-zinc-800 px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:border-amber-500/50 focus:outline-none"
-              />
-              <input
-                type="date"
-                value={newExpense.date}
-                onChange={(e) => setNewExpense({ ...newExpense, date: e.target.value })}
-                className="w-36 rounded-xl border border-white/10 bg-zinc-800 px-3 py-2.5 text-sm text-white focus:border-amber-500/50 focus:outline-none"
-              />
-              <button
-                onClick={addExpense}
-                disabled={savingExpense}
-                className="flex items-center gap-1 rounded-xl bg-zinc-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-zinc-600 active:scale-95 transition-transform disabled:opacity-60"
-              >
-                <Plus size={15} />
-              </button>
+          {/* Link para Finanças */}
+          <section className="rounded-3xl border border-emerald-500/20 bg-emerald-950/10 p-4 sm:p-6 flex items-center justify-between">
+            <div>
+              <p className="font-bold text-white">Finanças</p>
+              <p className="text-xs text-zinc-500">Faturamento, despesas e fluxo de caixa</p>
             </div>
+            <a
+              href="/financas"
+              className="flex items-center gap-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-4 py-2 text-sm font-semibold text-emerald-400 hover:bg-emerald-500/20 transition"
+            >
+              Ver Finanças
+            </a>
           </section>
 
           {/* Clientes Bloqueados */}
           {blockedClients.length > 0 && (
-            <section className="rounded-3xl border border-red-500/10 bg-zinc-900 p-6">
+            <section className="rounded-3xl border border-red-500/10 bg-zinc-900 p-4 sm:p-6">
               <h2 className="mb-5 flex items-center gap-2 font-bold text-white">
                 <ShieldOff size={16} className="text-red-400" /> Clientes Bloqueados
               </h2>
@@ -888,12 +765,12 @@ export default function DashboardPage() {
           )}
 
           {/* Galeria */}
-          <section className="rounded-3xl border border-white/5 bg-zinc-900 p-6">
+          <section className="rounded-3xl border border-white/5 bg-zinc-900 p-4 sm:p-6">
             <h2 className="mb-5 flex items-center gap-2 font-bold text-white">
               <ImageIcon size={16} className="text-amber-500" /> Galeria de Cortes
             </h2>
 
-            <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {data.gallery.map((img) => (
                 <div key={img.id} className="group relative aspect-square overflow-hidden rounded-2xl bg-zinc-800">
                   <Image src={img.url} fill className="object-cover" alt={img.caption || "Corte"} />
@@ -909,25 +786,29 @@ export default function DashboardPage() {
               ))}
             </div>
 
-            <div className="flex gap-2">
-              <input
-                placeholder="URL da imagem"
+            <div className="flex flex-col gap-2">
+              <ImageUpload
+                label="Nova foto"
                 value={newImage.url}
-                onChange={(e) => setNewImage({ ...newImage, url: e.target.value })}
-                className="flex-1 rounded-xl border border-white/10 bg-zinc-800 px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:border-amber-500/50 focus:outline-none"
+                onChange={(url) => setNewImage({ ...newImage, url })}
+                aspect="wide"
               />
-              <input
-                placeholder="Legenda (opcional)"
-                value={newImage.caption}
-                onChange={(e) => setNewImage({ ...newImage, caption: e.target.value })}
-                className="w-40 rounded-xl border border-white/10 bg-zinc-800 px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:border-amber-500/50 focus:outline-none"
-              />
-              <button
-                onClick={addImage}
-                className="flex items-center gap-1 rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-bold text-black hover:bg-amber-400 active:scale-95 transition-transform"
-              >
-                <Plus size={15} />
-              </button>
+              {newImage.url && (
+                <div className="flex gap-2">
+                  <input
+                    placeholder="Legenda (opcional)"
+                    value={newImage.caption}
+                    onChange={(e) => setNewImage({ ...newImage, caption: e.target.value })}
+                    className="flex-1 rounded-xl border border-white/10 bg-zinc-800 px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:border-amber-500/50 focus:outline-none"
+                  />
+                  <button
+                    onClick={addImage}
+                    className="flex items-center gap-1 rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-bold text-black hover:bg-amber-400 active:scale-95 transition-transform"
+                  >
+                    <Plus size={15} />
+                  </button>
+                </div>
+              )}
             </div>
           </section>
         </div>

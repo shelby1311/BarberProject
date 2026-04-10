@@ -19,10 +19,18 @@ export function expressLoader(app: Application) {
   app.use(helmet());
   app.use(cors({
     origin: (origin, callback) => {
-      const allowed = (process.env.FRONTEND_URL ?? "http://localhost:3000").split(",");
+      const allowed = (process.env.FRONTEND_URL ?? "http://localhost:3000")
+        .split(",")
+        .map(s => s.trim())
+        .flatMap(url => [
+          url,
+          url.replace("localhost", "127.0.0.1"),
+          url.replace("127.0.0.1", "localhost"),
+        ]);
       if (!origin || allowed.includes(origin)) callback(null, true);
       else callback(new Error("Not allowed by CORS"));
     },
+    credentials: true,
   }));
   app.use(express.json());
   app.use("/uploads", express.static(path.join(__dirname, "..", "..", "uploads")));

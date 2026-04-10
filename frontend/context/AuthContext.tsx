@@ -23,17 +23,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const t = localStorage.getItem("bf_token");
-    const u = localStorage.getItem("bf_user");
-    const b = localStorage.getItem("bf_barber");
-    const r = localStorage.getItem("bf_role") as "client" | "barber" | null;
-    if (t && u) {
-      setToken(t);
-      setUser(JSON.parse(u));
-      setRole(r);
-      if (b) setBarber(JSON.parse(b));
+    try {
+      const t = localStorage.getItem("bf_token");
+      const u = localStorage.getItem("bf_user");
+      const b = localStorage.getItem("bf_barber");
+      const r = localStorage.getItem("bf_role") as "client" | "barber" | null;
+      if (t && u) {
+        setToken(t);
+        setUser(JSON.parse(u));
+        setRole(r);
+        if (b) setBarber(JSON.parse(b));
+      }
+    } catch {
+      // localStorage indisponível ou JSON inválido
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   }, []);
 
   function login(t: string, r: "client" | "barber", u: AuthUser, b: Barber | null) {

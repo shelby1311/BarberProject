@@ -125,12 +125,12 @@ export default function BarberPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-zinc-950">
+      <div className="min-h-screen w-full bg-zinc-950 overflow-x-hidden">
         <Header />
-        <div className="relative h-44 w-full animate-pulse bg-zinc-800 md:h-56" />
-        <div className="mx-auto max-w-2xl px-6">
-          <div className="-mt-12 mb-4 flex items-end justify-between">
-            <div className="h-24 w-24 animate-pulse rounded-2xl bg-zinc-800" />
+        <div className="relative h-48 w-full animate-pulse bg-zinc-800 md:h-64" />
+        <div className="mx-auto max-w-3xl px-4 sm:px-6">
+          <div className="-mt-14 mb-4 flex items-end justify-between">
+            <div className="h-28 w-28 animate-pulse rounded-2xl bg-zinc-800" />
             <div className="mb-1 h-8 w-28 animate-pulse rounded-xl bg-zinc-800" />
           </div>
           <div className="mb-8 space-y-2">
@@ -158,7 +158,7 @@ export default function BarberPage() {
   const reviews = barber.reviews ?? [];
 
   return (
-    <div className="min-h-screen bg-zinc-950">
+    <div className="min-h-screen w-full bg-zinc-950 overflow-x-hidden">
       <Header />
 
       {/* Lightbox */}
@@ -175,17 +175,17 @@ export default function BarberPage() {
       </AnimatePresence>
 
       {/* Cover */}
-      <div className="relative h-44 w-full bg-zinc-900 md:h-56">
+      <div className="relative h-48 w-full bg-zinc-900 md:h-64 lg:h-72">
         {barber.coverUrl && (
           <Image src={barber.coverUrl} fill sizes="100vw" className="object-cover" alt={barber.name} priority />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/30 to-transparent" />
       </div>
 
-      <div className="mx-auto max-w-2xl px-6">
+      <div className="mx-auto max-w-3xl px-4 sm:px-6">
         {/* Avatar — flutua sobre a capa */}
-        <div className="-mt-12 mb-4 flex items-end justify-between">
-          <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-2xl border-4 border-zinc-950 bg-zinc-800">
+        <div className="-mt-14 mb-4 flex items-end justify-between">
+          <div className="relative h-28 w-28 shrink-0 overflow-hidden rounded-2xl border-4 border-zinc-950 bg-zinc-800">
             {barber.avatarUrl ? (
               <Image src={barber.avatarUrl} fill sizes="96px" className="object-cover" alt={barber.name} />
             ) : (
@@ -272,7 +272,7 @@ export default function BarberPage() {
         )}
 
         {/* Serviços e agendamento */}
-        <div id="booking-section" className="rounded-3xl border border-white/5 bg-zinc-900/50 backdrop-blur-xl mb-8">
+        <div id="booking-section" className="rounded-3xl border border-white/5 bg-zinc-900/50 backdrop-blur-xl mb-6 overflow-hidden">
           {barber.services.length > 0 && <ServiceList services={barber.services} />}
 
           {barber.workingHours && barber.workingHours.length > 0 && (
@@ -280,7 +280,7 @@ export default function BarberPage() {
               <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-widest text-zinc-400">
                 <Clock size={14} className="text-amber-500" /> Horários de Atendimento
               </h2>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
                 {barber.workingHours
                   .slice()
                   .sort((a, b) => a.dayOfWeek - b.dayOfWeek)
@@ -346,7 +346,7 @@ export default function BarberPage() {
       {barber.services.length > 0 && (
         <button
           onClick={scrollToBooking}
-          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 px-5 py-3.5 text-sm font-bold text-black shadow-[0_0_24px_rgba(245,158,11,0.4)] hover:shadow-[0_0_32px_rgba(245,158,11,0.6)] active:scale-95 transition-all select-none touch-target"
+          className="fixed bottom-5 right-5 z-40 flex items-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-3 text-sm font-bold text-black shadow-[0_0_24px_rgba(245,158,11,0.4)] hover:shadow-[0_0_32px_rgba(245,158,11,0.6)] active:scale-95 transition-all select-none touch-target"
           style={{ paddingBottom: `calc(0.875rem + env(safe-area-inset-bottom))` }}
         >
           <CalendarCheck size={16} />

@@ -44,7 +44,9 @@ export function getAvailableSlots(
 ): Date[] {
   const day = new Date(requestedDate);
   day.setHours(0, 0, 0, 0);
-  const dayOfWeek = day.getDay();
+  // Usa fuso de Brasília para não errar o dia da semana
+  const localDate = new Date(requestedDate.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+  const dayOfWeek = localDate.getDay();
   const dateStr = day.toISOString().split("T")[0];
 
   // Horário de trabalho

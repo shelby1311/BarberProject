@@ -13,6 +13,7 @@ export const AppointmentRepository = {
     barberId: string;
     serviceId: string;
     clientName: string;
+    clientEmail?: string;
     clientId?: string;
     startsAt: Date;
     endsAt?: Date;

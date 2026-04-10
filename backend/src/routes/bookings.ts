@@ -17,6 +17,7 @@ import { authMiddleware, requireBarber, requireClient, AuthRequest } from "../sh
 import { io } from "../loaders/socket";
 import { validate } from "../shared/middlewares/validate";
 import logger from "../shared/logger";
+import { sendCancellationEmail } from "../shared/mailer";
 
 export const bookingRouter = Router();
 
@@ -70,7 +71,8 @@ bookingRouter.post("/", validate(BookingSchema), async (req, res, next) => {
     if (!service) throw new NotFoundException("Serviço");
 
     // Valida se o barbeiro trabalha nesse dia da semana
-    const dayOfWeek = startTime.getDay();
+    const localDay = new Date(startTime.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+    const dayOfWeek = localDay.getDay();
     const workingDay = barber.workingHours.find((w) => w.dayOfWeek === dayOfWeek);
     if (!workingDay) {
       throw new BusinessRuleException("O barbeiro não atende neste dia da semana.");
@@ -100,14 +102,22 @@ bookingRouter.post("/", validate(BookingSchema), async (req, res, next) => {
     const strategy = useOnlineDiscount ? new OnlineBookingDiscount() : new NoDiscount();
     const finalPriceInCents = strategy.apply(service.priceInCents);
 
-    // Tenta obter clientId do token (se logado)
+    // Tenta obter clientId e email do token (se logado)
     const token = req.headers.authorization?.split(" ")[1];
     let clientId: string | undefined;
+    let clientEmail: string = "";
     if (token) {
       try {
         const jwt = await import("jsonwebtoken");
         const payload = jwt.default.verify(token, process.env.JWT_SECRET!) as { clientId?: string };
         clientId = payload.clientId;
+        if (clientId) {
+          const clientUser = await prisma.client.findUnique({
+            where: { id: clientId },
+            include: { user: { select: { email: true } } },
+          });
+          clientEmail = clientUser?.user.email ?? "";
+        }
       } catch { /* anônimo */ }
     }
 
@@ -126,6 +136,7 @@ bookingRouter.post("/", validate(BookingSchema), async (req, res, next) => {
       barberId,
       serviceId,
       clientName,
+      clientEmail,
       clientId,
       startsAt: startTime,
       endsAt,
@@ -221,6 +232,52 @@ bookingRouter.get("/:barberId/slots", async (req, res, next) => {
     const slots = getAvailableSlots(date, bookings, barber.workingHours, durationMinutes, barber.scheduleBlocks);
     res.json(slots.map((s) => s.toISOString()));
   } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/bookings/:id/reject — barbeiro rejeita agendamento pendente e notifica cliente por email
+bookingRouter.patch("/:id/reject", authMiddleware, requireBarber, async (req: AuthRequest, res, next) => {
+  try {
+    const appointment = await prisma.appointment.findUnique({
+      where: { id: req.params.id },
+      include: { barber: true, service: true },
+    });
+    if (!appointment) throw new NotFoundException("Agendamento");
+    if (appointment.barberId !== req.barberId) throw new UnauthorizedException();
+    if (appointment.status !== "pending") {
+      throw new BusinessRuleException("Apenas agendamentos pendentes podem ser rejeitados.");
+    }
+
+    await prisma.appointment.update({
+      where: { id: req.params.id },
+      data: { status: "cancelled" },
+    });
+
+    // Notifica cliente via socket
+    io.to(`barber:${req.barberId}`).emit("booking:rejected", { appointmentId: req.params.id });
+
+    // Envia email se tiver email do cliente
+    if (appointment.clientEmail) {
+      try {
+        await sendCancellationEmail({
+          to: appointment.clientEmail,
+          clientName: appointment.clientName,
+          barberName: appointment.barber.name,
+          serviceName: appointment.service?.name ?? "Serviço",
+          startsAt: appointment.startsAt,
+        });
+      } catch (mailErr) {
+        logger.warn({ mailErr }, "Falha ao enviar email de cancelamento");
+      }
+    }
+
+    logger.info({ appointmentId: req.params.id, barberId: req.barberId }, "Agendamento rejeitado pelo barbeiro");
+    res.json({ success: true });
+  } catch (err) {
+    if (err instanceof AppError) {
+      return res.status(err.statusCode).json({ success: false, code: err.code, message: err.message });
+    }
     next(err);
   }
 });

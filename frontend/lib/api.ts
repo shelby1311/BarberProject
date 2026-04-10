@@ -67,6 +67,9 @@ export const api = {
   createBooking: (payload: BookingPayload) =>
     apiFetch<BookingResult>("/api/bookings", { method: "POST", body: JSON.stringify(payload) }),
 
+  rejectBooking: (id: string) =>
+    apiFetch<{ success: boolean }>(`/api/bookings/${id}/reject`, { method: "PATCH" }),
+
   cancelBooking: (id: string) =>
     apiFetch<{ success: boolean; appointment: Appointment }>(`/api/bookings/${id}/cancel`, { method: "PATCH" }),
 

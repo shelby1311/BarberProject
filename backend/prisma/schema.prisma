@@ -122,6 +122,7 @@ model Appointment {
   serviceId   String   @map("service_id")
   clientId    String?  @map("client_id")
   clientName  String   @map("client_name")
+  clientEmail String   @default("") @map("client_email")
   startsAt    DateTime @map("starts_at")
   endsAt      DateTime? @map("ends_at")  // calculado a partir de durationMinutes
   status      String   @default("pending") // pending | confirmed | completed | cancelled | no_show

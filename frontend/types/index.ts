@@ -39,6 +39,7 @@ export interface Review {
 export interface Appointment {
   id: string;
   clientName: string;
+  clientEmail?: string;
   clientPhone?: string;
   startsAt: string;
   serviceId: string;
