@@ -16,7 +16,9 @@ import { swaggerSpec } from "./swagger";
 const PORT = process.env.PORT ?? 3001;
 
 export function expressLoader(app: Application) {
-  app.use(helmet());
+  app.use(helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  }));
   app.use(cors({
     origin: (origin, callback) => {
       const allowed = (process.env.FRONTEND_URL ?? "http://localhost:3000")

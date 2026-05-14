@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   typescript: { ignoreBuildErrors: true },
 
-  allowedDevOrigins: ["127.0.0.1", "localhost", "192.168.7.128"],
+  allowedDevOrigins: ["127.0.0.1", "localhost", "192.168.7.128", "192.168.1.3"],
 
   onDemandEntries: {
     maxInactiveAge: 25 * 1000,

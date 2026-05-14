@@ -159,7 +159,7 @@ export default function DashboardPage() {
       if (d.workingHours && d.workingHours.length > 0) setWorkingHours(d.workingHours);
     }).finally(() => setLoading(false));
     api.getBlockedClients().then(setBlockedClients).catch(() => {});
-  }, [authBarber, currentMonth]);
+  }, [authBarber]);
 
   async function saveProfile() {
     setSaving(true);
@@ -333,6 +333,9 @@ export default function DashboardPage() {
       setQueueCount(result.queueCount);
       setFeedback(`Cliente adicionado à fila (${result.queueCount} na fila)`);
       setTimeout(() => setFeedback(""), 3000);
+    } catch (error: any) {
+      setFeedback(error?.message || "Erro ao adicionar à fila. Verifique seu plano.");
+      setTimeout(() => setFeedback(""), 5000);
     } finally {
       setQueueLoading(false);
     }
@@ -345,6 +348,9 @@ export default function DashboardPage() {
       setQueueCount(result.queueCount);
       setFeedback(`Cliente removido da fila (${result.queueCount} restantes)`);
       setTimeout(() => setFeedback(""), 3000);
+    } catch (error: any) {
+      setFeedback(error?.message || "Erro ao remover da fila.");
+      setTimeout(() => setFeedback(""), 5000);
     } finally {
       setQueueLoading(false);
     }

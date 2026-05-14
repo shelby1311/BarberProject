@@ -5,7 +5,7 @@ export let io: SocketServer;
 
 export function socketLoader(httpServer: http.Server) {
   io = new SocketServer(httpServer, {
-    cors: { origin: process.env.FRONTEND_URL ?? "http://localhost:3000" },
+    cors: { origin: (process.env.FRONTEND_URL ?? "http://localhost:3000").split(",").map(s => s.trim()) },
   });
 
   io.on("connection", (socket) => {

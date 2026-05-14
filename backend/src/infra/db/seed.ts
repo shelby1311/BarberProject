@@ -25,8 +25,8 @@ async function main() {
       ownerId: user1.id,
       name: "Barbearia do João",
       slug: "barbearia-joao-silva",
-      plan: "ESSENTIAL",
-      maxBarbers: 1,
+      plan: "PRO",
+      maxBarbers: 5,
       planStatus: "ACTIVE",
     },
   });
@@ -106,7 +106,7 @@ async function main() {
   console.log("✅ Seed concluído.");
   console.log("   Barbeiros: joao@barberflow.com / carlos@barberflow.com");
   console.log("   CPFs: 529.982.247-25 / 877.482.488-00  |  Senha: barber123");
-  console.log("   Barbearias: Barbearia do João (ESSENTIAL) / Barbearia do Carlos (PRO)");
+  console.log("   Barbearias: Barbearia do João (PRO) / Barbearia do Carlos (PRO)");
   await prisma.$disconnect();
 }
 
