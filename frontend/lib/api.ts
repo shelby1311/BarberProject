@@ -1,4 +1,4 @@
-import { Barber, BookingPayload, BookingResult, AuthResponse, Appointment, Review, ScheduleBlock, OccupancyMetric, SubscriptionPlan, Expense, MonthlyMetric, BarberStatus } from "@/types";
+import { Barber, BookingPayload, BookingResult, AuthResponse, Appointment, Review, ScheduleBlock, OccupancyMetric, SubscriptionPlan, Expense, MonthlyMetric, BarberStatus, Barbershop, LoyaltyReward, ClientProfile, WeeklySlot } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -157,4 +157,52 @@ export const api = {
     if (!res.ok) throw data;
     return data;
   },
+  // ─── Novos métodos: Solicitações ────────────────────────────────────
+  getAppointmentDetails: (id: string) =>
+    apiFetch<any>(`/api/barbers/me/appointments/${id}`),
+
+  batchConfirmAppointments: (ids: string[]) =>
+    apiFetch<{ success: boolean; updatedCount: number }>("/api/barbers/me/appointments/batch-confirm", {
+      method: "POST",
+      body: JSON.stringify({ ids }),
+    }),
+
+  cleanupCancelledAppointments: () =>
+    apiFetch<{ success: boolean; deletedCount: number }>("/api/barbers/me/appointments/cleanup-cancelled", {
+      method: "POST",
+    }),
+
+  // ─── Assinatura ────────────────────────────────────────────────────
+  getBarbershop: () =>
+    apiFetch<Barber & { barbershop: Barbershop }>("/api/barbers/me/dashboard"),
+
+  getStaff: () =>
+    apiFetch<{ id: string; name: string; slug: string; avatarUrl: string; status: string }[]>("/api/subscriptions/staff"),
+
+  // ─── Fidelidade ──────────────────────────────────────────────────────
+  getLoyaltyRewards: () =>
+    apiFetch<LoyaltyReward[]>("/api/barbers/me/loyalty/rewards"),
+
+  addLoyaltyReward: (data: { name: string; description: string; pointsCost: number }) =>
+    apiFetch<LoyaltyReward>("/api/barbers/me/loyalty/rewards", {
+      method: "POST", body: JSON.stringify(data),
+    }),
+
+  deleteLoyaltyReward: (id: string) =>
+    apiFetch<void>(`/api/barbers/me/loyalty/rewards/${id}`, { method: "DELETE" }),
+
+  getClientLoyalty: () =>
+    apiFetch<{ points: number; history: { date: string; points: number; description: string }[] }>("/api/bookings/me/loyalty"),
+
+  // ─── QR Code Check-in ────────────────────────────────────────────────
+  checkinAppointment: (id: string) =>
+    apiFetch<{ success: boolean }>(`/api/barbers/me/appointments/${id}/checkin`, { method: "PATCH" }),
+
+  // ─── Grade Semanal ───────────────────────────────────────────────────
+  getWeeklySchedule: (weekStart: string) =>
+    apiFetch<WeeklySlot[]>(`/api/barbers/me/weekly-schedule?weekStart=${weekStart}`),
+
+  // ─── CRM Clientes ────────────────────────────────────────────────────
+  getClients: () =>
+    apiFetch<ClientProfile[]>("/api/barbers/me/clients"),
 };

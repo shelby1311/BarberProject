@@ -165,3 +165,33 @@ export interface SubscriptionPlan {
   durationDays: number;
   maxStaff: number;
 }
+
+// ─── Fidelidade ───────────────────────────────────────────────────────────────
+export interface LoyaltyReward {
+  id: string;
+  name: string;
+  description: string;
+  pointsCost: number;
+  active: boolean;
+}
+
+export interface ClientProfile {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  points: number;
+  noShowCount: number;
+  isBlocked: boolean;
+  totalAppointments: number;
+  totalSpentInCents: number;
+  lastVisit: string | null;
+  tags: string[];
+}
+
+// ─── Grade Semanal ────────────────────────────────────────────────────────────
+export interface WeeklySlot {
+  date: string;
+  dayOfWeek: number;
+  slots: { time: string; status: "available" | "booked" | "blocked" | "past"; appointmentId?: string; clientName?: string; serviceName?: string }[];
+}

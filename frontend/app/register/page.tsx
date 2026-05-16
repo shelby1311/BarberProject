@@ -3,7 +3,8 @@
 import { Suspense, useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Scissors, Eye, EyeOff, User, Store, CheckCircle2, XCircle, Loader2 } from "lucide-react";
+import { Eye, EyeOff, User, Store, CheckCircle2, XCircle, Loader2 } from "lucide-react";
+import { Logo } from "@/components/Logo";
 import { motion } from "framer-motion";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -276,10 +277,7 @@ export default function RegisterPage() {
     <div className="flex min-h-screen w-full items-center justify-center bg-zinc-950 px-4 py-12 overflow-x-hidden">
       <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">
         <div className="mb-8 text-center">
-          <Link href="/" className="inline-flex items-center gap-2 font-black text-2xl">
-            <Scissors className="text-amber-500" size={24} />
-            Barber<span className="text-amber-500">Flow</span>
-          </Link>
+          <Logo size={24} />
           <p className="mt-2 text-zinc-500">Crie sua conta gratuitamente</p>
         </div>
 

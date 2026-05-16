@@ -3,7 +3,8 @@
 import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Scissors, Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
+import { Logo } from "@/components/Logo";
 import { motion } from "framer-motion";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -119,10 +120,7 @@ export default function LoginPage() {
         className="w-full max-w-md"
       >
         <div className="mb-8 text-center">
-          <Link href="/" className="inline-flex items-center gap-2 font-black text-2xl">
-            <Scissors className="text-amber-500" size={24} />
-            Barber<span className="text-amber-500">Flow</span>
-          </Link>
+          <Logo size={24} />
           <p className="mt-2 text-zinc-500">Acesse sua conta</p>
         </div>
 

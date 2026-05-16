@@ -130,7 +130,7 @@ export default function DashboardPage() {
       }
     });
     return () => { socket.disconnect(); };
-  }, [authBarber?.id]);
+  }, [authBarber?.id, authBarber?.barbershopId]);
 
   useEffect(() => {
     if (!authBarber) return;
@@ -159,7 +159,7 @@ export default function DashboardPage() {
       if (d.workingHours && d.workingHours.length > 0) setWorkingHours(d.workingHours);
     }).finally(() => setLoading(false));
     api.getBlockedClients().then(setBlockedClients).catch(() => {});
-  }, [authBarber]);
+  }, [authBarber, authBarber?.barbershopId]);
 
   async function saveProfile() {
     setSaving(true);

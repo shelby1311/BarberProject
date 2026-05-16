@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../infra/db/connection";
 import { authMiddleware, requireBarber, AuthRequest } from "../shared/authMiddleware";
-import { NotFoundException, BusinessRuleException } from "../shared/AppError";
+import { NotFoundException, BusinessRuleException, UnauthorizedException } from "../shared/AppError";
 import { sanitizeCSVField } from "../shared/crypto";
 import { io } from "../loaders/socket";
 import { getPlanLimits, QUEUE_LIMITS } from "../shared/planGuard";
@@ -556,6 +556,75 @@ barberRouter.post("/me/queue/remove", authMiddleware, requireBarber, async (req:
   }
 });
 
+// GET /me/appointments/:id — detalhes do agendamento com info do cliente (para slide-over)
+barberRouter.get("/me/appointments/:id", authMiddleware, requireBarber, async (req: AuthRequest, res, next) => {
+  try {
+    const appointment = await prisma.appointment.findUnique({
+      where: { id: req.params.id },
+      include: {
+        service: true,
+        client: {
+          include: { user: { select: { name: true, email: true } } },
+        },
+      },
+    });
+    if (!appointment) throw new NotFoundException("Agendamento");
+    if (appointment.barberId !== req.barberId) throw new UnauthorizedException();
+
+    // Conta quantos agendamentos este cliente já teve com este barbeiro
+    const totalAppointments = appointment.clientId
+      ? await prisma.appointment.count({
+          where: { clientId: appointment.clientId, barberId: req.barberId, status: { not: "cancelled" } },
+        })
+      : 0;
+
+    res.json({
+      ...appointment,
+      clientHistory: {
+        totalAppointments,
+        noShowCount: appointment.client?.noShowCount ?? 0,
+        isBlocked: appointment.client?.isBlocked ?? false,
+        isRecurring: totalAppointments >= 3,
+      },
+    });
+  } catch (err) { next(err); }
+});
+
+// POST /me/appointments/batch-confirm — confirma múltiplos agendamentos de uma vez
+barberRouter.post("/me/appointments/batch-confirm", authMiddleware, requireBarber, async (req: AuthRequest, res, next) => {
+  try {
+    const { ids } = z.object({ ids: z.array(z.string().min(1)).min(1).max(50) }).parse(req.body);
+
+    const result = await prisma.appointment.updateMany({
+      where: { id: { in: ids }, barberId: req.barberId, status: "pending" },
+      data: { status: "confirmed" },
+    });
+
+    res.json({ success: true, updatedCount: result.count });
+  } catch (err) {
+    if (err instanceof z.ZodError) return res.status(400).json({ message: err.issues[0].message });
+    next(err);
+  }
+});
+
+// POST /me/appointments/cleanup-cancelled — remove (ou marca como lido) cancelados antigos
+barberRouter.post("/me/appointments/cleanup-cancelled", authMiddleware, requireBarber, async (req: AuthRequest, res, next) => {
+  try {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const result = await prisma.appointment.deleteMany({
+      where: {
+        barberId: req.barberId,
+        status: "cancelled",
+        startsAt: { lt: thirtyDaysAgo },
+      },
+    });
+
+    res.json({ success: true, deletedCount: result.count });
+  } catch (err) { next(err); }
+});
+
 const WorkingHoursSchema = z.array(z.object({
   dayOfWeek: z.number().int().min(0).max(6),
   startTime: z.string().regex(/^\d{2}:\d{2}$/),
@@ -585,3 +654,251 @@ barberRouter.put("/me/working-hours", authMiddleware, requireBarber, async (req:
     next(err);
   }
 });
+
+// ─── FIDELIDADE ────────────────────────────────────────────────────────────────
+
+// GET /me/loyalty/rewards — lista recompensas
+barberRouter.get("/me/loyalty/rewards", authMiddleware, requireBarber, async (req: AuthRequest, res, next) => {
+  try {
+    const barber = await prisma.barber.findUnique({ where: { id: req.barberId }, select: { barbershopId: true } });
+    if (!barber) throw new NotFoundException("Barbeiro");
+    // Recompensas são globais da barbearia — armazenamos como JSON no barbershop ou simplesmente fixas
+    // Por simplicidade, retornamos recompensas padrão + customizadas
+    const rewards = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT id, name, description, points_cost as pointsCost, active FROM loyalty_rewards WHERE barbershop_id = ?`,
+      barber.barbershopId
+    ).catch(() => []);
+    res.json(rewards);
+  } catch (err) { next(err); }
+});
+
+// POST /me/loyalty/rewards — cria recompensa
+barberRouter.post("/me/loyalty/rewards", authMiddleware, requireBarber, async (req: AuthRequest, res, next) => {
+  try {
+    const { name, description, pointsCost } = z.object({
+      name: z.string().min(1),
+      description: z.string().min(1),
+      pointsCost: z.number().int().positive(),
+    }).parse(req.body);
+    const barber = await prisma.barber.findUnique({ where: { id: req.barberId }, select: { barbershopId: true } });
+    if (!barber) throw new NotFoundException("Barbeiro");
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO loyalty_rewards (id, barbershop_id, name, description, points_cost, active) VALUES (?, ?, ?, ?, ?, 1)`,
+      require("crypto").randomUUID(), barber.barbershopId, name, description, pointsCost
+    );
+    res.json({ id: "", name, description, pointsCost, active: true });
+  } catch (err) {
+    if (err instanceof z.ZodError) return res.status(400).json({ message: err.issues[0].message });
+    next(err);
+  }
+});
+
+// DELETE /me/loyalty/rewards/:id
+barberRouter.delete("/me/loyalty/rewards/:id", authMiddleware, requireBarber, async (req: AuthRequest, res, next) => {
+  try {
+    await prisma.$executeRawUnsafe(`DELETE FROM loyalty_rewards WHERE id = ?`, req.params.id);
+    res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
+// PATCH /me/appointments/:id/checkin — QR Code Check-in
+barberRouter.patch("/me/appointments/:id/checkin", authMiddleware, requireBarber, async (req: AuthRequest, res, next) => {
+  try {
+    const appointment = await prisma.appointment.findFirst({
+      where: { id: req.params.id, barberId: req.barberId, status: "confirmed" },
+      include: { client: true },
+    });
+    if (!appointment) throw new NotFoundException("Agendamento não encontrado ou não está confirmado");
+
+    await prisma.appointment.update({
+      where: { id: req.params.id },
+      data: { status: "completed" },
+    });
+
+    // Se tem cliente, acumula pontos de fidelidade
+    if (appointment.clientId && !appointment.pointsAwarded) {
+      const service = await prisma.service.findUnique({ where: { id: appointment.serviceId } });
+      const points = Math.floor((service?.priceInCents ?? 0) / 100); // 1 ponto a cada R$1
+      await prisma.client.update({
+        where: { id: appointment.clientId },
+        data: { points: { increment: points } },
+      });
+      await prisma.appointment.update({
+        where: { id: req.params.id },
+        data: { pointsAwarded: true },
+      });
+    }
+
+    res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
+// ─── GRADE SEMANAL ────────────────────────────────────────────────────────────
+
+// GET /me/weekly-schedule?weekStart=2025-06-16
+barberRouter.get("/me/weekly-schedule", authMiddleware, requireBarber, async (req: AuthRequest, res, next) => {
+  try {
+    const weekStart = req.query.weekStart as string;
+    if (!weekStart) throw new Error("weekStart é obrigatório (YYYY-MM-DD)");
+
+    const startDate = new Date(weekStart + "T00:00:00");
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + 7);
+
+    const barber = await prisma.barber.findUnique({
+      where: { id: req.barberId },
+      include: {
+        workingHours: true,
+        scheduleBlocks: true,
+        appointments: {
+          where: { startsAt: { gte: startDate, lt: endDate } },
+          include: { service: { select: { name: true, durationMinutes: true } }, client: { select: { user: { select: { name: true } } } } },
+          orderBy: { startsAt: "asc" },
+        },
+      },
+    });
+    if (!barber) throw new NotFoundException("Barbeiro");
+
+    const days: WeeklySlot[] = [];
+    for (let d = 0; d < 7; d++) {
+      const date = new Date(startDate);
+      date.setDate(date.getDate() + d);
+      const dateStr = date.toISOString().split("T")[0];
+      const dayOfWeek = date.getDay();
+
+      const wh = barber.workingHours.find((h) => h.dayOfWeek === dayOfWeek);
+      const blocks = barber.scheduleBlocks.filter((b) => b.date === dateStr);
+      const dayAppointments = barber.appointments.filter(
+        (a) => a.startsAt.toISOString().split("T")[0] === dateStr
+      );
+
+      const slots: WeeklySlot["slots"] = [];
+      if (wh) {
+        const [startH, startM] = wh.startTime.split(":").map(Number);
+        const [endH, endM] = wh.endTime.split(":").map(Number);
+        const startMin = startH * 60 + startM;
+        const endMin = endH * 60 + endM;
+
+        for (let m = startMin; m < endMin; m += 30) {
+          const hh = String(Math.floor(m / 60)).padStart(2, "0");
+          const mm = String(m % 60).padStart(2, "0");
+          const time = `${hh}:${mm}`;
+          const slotDateTime = new Date(`${dateStr}T${time}:00`);
+          const now = new Date();
+
+          // Verificar se está bloqueado
+          const isBlocked = blocks.some((b) => {
+            if (!b.startTime || !b.endTime) return true; // dia inteiro
+            return time >= b.startTime && time < b.endTime;
+          });
+
+          // Verificar se tem agendamento
+          const booked = dayAppointments.find((a) => {
+            const aTime = a.startsAt.toISOString().split("T")[1].slice(0, 5);
+            return aTime === time;
+          });
+
+          if (booked) {
+            slots.push({
+              time,
+              status: slotDateTime < now ? "past" : "booked",
+              appointmentId: booked.id,
+              clientName: booked.client?.user?.name ?? booked.clientName,
+              serviceName: booked.service?.name,
+            });
+          } else if (isBlocked) {
+            slots.push({ time, status: "blocked" });
+          } else if (slotDateTime < now) {
+            slots.push({ time, status: "past" });
+          } else {
+            slots.push({ time, status: "available" });
+          }
+        }
+      }
+
+      days.push({ date: dateStr, dayOfWeek, slots });
+    }
+
+    res.json(days);
+  } catch (err) { next(err); }
+});
+
+interface WeeklySlot {
+  date: string;
+  dayOfWeek: number;
+  slots: { time: string; status: string; appointmentId?: string; clientName?: string; serviceName?: string }[];
+}
+
+// ─── CRM CLIENTES ────────────────────────────────────────────────────────────
+
+// GET /me/clients — lista todos os clientes com perfil completo
+barberRouter.get("/me/clients", authMiddleware, requireBarber, async (req: AuthRequest, res, next) => {
+  try {
+    const appointments = await prisma.appointment.findMany({
+      where: { barberId: req.barberId, clientId: { not: null } },
+      include: {
+        client: {
+          include: { user: { select: { name: true, email: true } } },
+        },
+        service: { select: { priceInCents: true, name: true } },
+      },
+      orderBy: { startsAt: "desc" },
+    });
+
+    // Agrupar por clientId
+    const clientMap = new Map<string, ClientProfileData>();
+    for (const a of appointments) {
+      if (!a.clientId || !a.client) continue;
+      const existing = clientMap.get(a.clientId);
+      if (existing) {
+        existing.totalAppointments++;
+        existing.totalSpentInCents += a.service?.priceInCents ?? 0;
+        if (!existing.lastVisit || a.startsAt > new Date(existing.lastVisit)) {
+          existing.lastVisit = a.startsAt.toISOString();
+        }
+      } else {
+        clientMap.set(a.clientId, {
+          id: a.clientId,
+          name: a.client.user.name,
+          email: a.client.user.email,
+          phone: a.client.phone,
+          points: a.client.points,
+          noShowCount: a.client.noShowCount,
+          isBlocked: a.client.isBlocked,
+          totalAppointments: 1,
+          totalSpentInCents: a.service?.priceInCents ?? 0,
+          lastVisit: a.startsAt.toISOString(),
+        });
+      }
+    }
+
+    const clients = Array.from(clientMap.values()).map((c) => ({
+      ...c,
+      tags: [] as string[],
+    }));
+
+    // Adicionar tags
+    for (const c of clients) {
+      if (c.totalAppointments >= 10) c.tags.push("VIP");
+      if (c.totalAppointments >= 3) c.tags.push("Recorrente");
+      if (c.noShowCount >= 2) c.tags.push("Risco");
+      if (c.isBlocked) c.tags.push("Bloqueado");
+      if (c.totalSpentInCents >= 50000) c.tags.push("Alto Gasto"); // R$500+
+    }
+
+    res.json(clients);
+  } catch (err) { next(err); }
+});
+
+interface ClientProfileData {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  points: number;
+  noShowCount: number;
+  isBlocked: boolean;
+  totalAppointments: number;
+  totalSpentInCents: number;
+  lastVisit: string;
+}

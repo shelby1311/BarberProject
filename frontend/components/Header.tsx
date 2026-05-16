@@ -3,7 +3,8 @@
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Scissors, LogOut, UserCircle, CalendarDays, Settings, ChevronDown, Heart, Inbox, TrendingUp } from "lucide-react";
+import { LogOut, UserCircle, CalendarDays, Settings, ChevronDown, Heart, Inbox, TrendingUp, Crown, ClipboardList, Calendar, Users, Award } from "lucide-react";
+import { Logo } from "@/components/Logo";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
 
@@ -54,29 +55,35 @@ export function Header() {
   return (
     <header className="sticky top-0 z-50 border-b border-white/5 bg-zinc-900/70 backdrop-blur-md w-full">
       <div className="w-full flex items-center justify-between px-3 sm:px-6 py-3">
-        {/* Logo */}
-        <Link href="/" className="flex shrink-0 items-center gap-2 font-black text-lg tracking-tight">
-          <Scissors className="text-amber-500" size={20} />
-          <span>Barber<span className="text-amber-500">Flow</span></span>
-        </Link>
+        {/* Logo — Hélice Infinita */}
+        <Logo />
 
         {!isLoading && (
           <div className="flex items-center gap-2">
             {user ? (
               <>
                 {role === "barber" && (
-                  <Link
-                    href="/dashboard#caixa-de-entrada"
-                    className="relative flex items-center gap-1.5 rounded-xl border border-white/10 px-3 py-2 text-sm font-medium text-zinc-300 hover:border-amber-500/40 hover:text-white transition"
-                  >
-                    <Inbox size={15} />
-                    <span className="hidden sm:inline">Caixa de Entrada</span>
-                    {pendingCount > 0 && (
-                      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-amber-500 text-xs font-black text-black">
-                        {pendingCount}
-                      </span>
-                    )}
-                  </Link>
+                  <>
+                    <Link
+                      href="/dashboard/solicitacoes"
+                      className="relative flex items-center gap-1.5 rounded-xl border border-white/10 px-3 py-2 text-sm font-medium text-zinc-300 hover:border-amber-500/40 hover:text-white transition"
+                    >
+                      <ClipboardList size={15} />
+                      <span className="hidden sm:inline">Solicitações</span>
+                      {pendingCount > 0 && (
+                        <span className="flex h-4 w-4 items-center justify-center rounded-full bg-amber-500 text-xs font-black text-black">
+                          {pendingCount}
+                        </span>
+                      )}
+                    </Link>
+                    <Link
+                      href="/dashboard#caixa-de-entrada"
+                      className="relative flex items-center gap-1.5 rounded-xl border border-white/10 px-3 py-2 text-sm font-medium text-zinc-300 hover:border-amber-500/40 hover:text-white transition"
+                    >
+                      <Inbox size={15} />
+                      <span className="hidden sm:inline">Caixa de Entrada</span>
+                    </Link>
+                  </>
                 )}
 
                 {/* Avatar dropdown */}
@@ -123,14 +130,56 @@ export function Header() {
                           </Link>
                         )}
                         {role === "barber" && (
-                          <Link
-                            href="/financas"
-                            onClick={() => setOpen(false)}
-                            className="flex items-center gap-3 px-4 py-2.5 text-sm text-zinc-300 hover:bg-white/5 hover:text-white transition"
-                          >
-                            <TrendingUp size={15} className="text-emerald-400" />
-                            Finanças
-                          </Link>
+                          <>
+                            <Link
+                              href="/dashboard/solicitacoes"
+                              onClick={() => setOpen(false)}
+                              className="flex items-center gap-3 px-4 py-2.5 text-sm text-zinc-300 hover:bg-white/5 hover:text-white transition"
+                            >
+                              <ClipboardList size={15} className="text-amber-500" />
+                              Solicitações
+                            </Link>
+                            <Link
+                              href="/dashboard/agenda"
+                              onClick={() => setOpen(false)}
+                              className="flex items-center gap-3 px-4 py-2.5 text-sm text-zinc-300 hover:bg-white/5 hover:text-white transition"
+                            >
+                              <Calendar size={15} className="text-blue-400" />
+                              Grade de Horários
+                            </Link>
+                            <Link
+                              href="/dashboard/clientes"
+                              onClick={() => setOpen(false)}
+                              className="flex items-center gap-3 px-4 py-2.5 text-sm text-zinc-300 hover:bg-white/5 hover:text-white transition"
+                            >
+                              <Users size={15} className="text-purple-400" />
+                              Clientes
+                            </Link>
+                            <Link
+                              href="/dashboard/fidelidade"
+                              onClick={() => setOpen(false)}
+                              className="flex items-center gap-3 px-4 py-2.5 text-sm text-zinc-300 hover:bg-white/5 hover:text-white transition"
+                            >
+                              <Award size={15} className="text-amber-500" />
+                              Fidelidade
+                            </Link>
+                            <Link
+                              href="/dashboard/financas"
+                              onClick={() => setOpen(false)}
+                              className="flex items-center gap-3 px-4 py-2.5 text-sm text-zinc-300 hover:bg-white/5 hover:text-white transition"
+                            >
+                              <TrendingUp size={15} className="text-emerald-400" />
+                              Inteligência Financeira
+                            </Link>
+                            <Link
+                              href="/dashboard/assinatura"
+                              onClick={() => setOpen(false)}
+                              className="flex items-center gap-3 px-4 py-2.5 text-sm text-zinc-300 hover:bg-white/5 hover:text-white transition"
+                            >
+                              <Crown size={15} className="text-amber-500" />
+                              Assinatura
+                            </Link>
+                          </>
                         )}
                         <Link
                           href={role === "barber" ? "/dashboard" : "/minha-conta"}
