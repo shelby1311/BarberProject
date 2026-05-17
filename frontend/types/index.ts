@@ -44,6 +44,7 @@ export interface Appointment {
   startsAt: string;
   serviceId: string;
   status: AppointmentStatus;
+  paymentStatus?: string; // "pending" | "confirmed"
   service?: Service;
   barber?: Pick<Barber, "id" | "name" | "slug" | "avatarUrl">;
   review?: Review | null;
@@ -114,6 +115,10 @@ export interface Barber {
   avatarUrl: string;
   instagram: string;
   phone: string;
+  cep: string;
+  referencePoint: string;
+  locationImages: string;
+  acceptedPayments: string; // JSON array: ["pix","credit","debit","cash"]
   barbershopId: string;
   barbershop?: Barbershop;
   status: BarberStatus;
@@ -156,7 +161,7 @@ export interface BookingPayload {
 }
 
 export type BookingResult =
-  | { success: true; appointmentId: string; confirmedAt: string; finalPriceInCents: number; pixKey: string; pixMessage: string }
+  | { success: true; appointmentId: string; confirmedAt: string; finalPriceInCents: number; pixKey: string; pixMessage: string; googleCalendarUrl: string }
   | { success: false; code: string; message: string };
 
 export interface SubscriptionPlan {

@@ -1,15 +1,56 @@
 import { Router } from "express";
 import { z } from "zod";
-import { randomUUID } from "crypto";
+import { randomUUID, randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { prisma } from "../infra/db/connection";
 import { encryptCPF, hashCPF } from "../shared/crypto";
 import { validate } from "../shared/middlewares/validate";
+import { validateStrongPassword } from "../shared/security";
 import logger from "../shared/logger";
 
 export const authRouter = Router();
 
+// ─── Brute-force protection (em memória) ────────────────────────────────
+const loginAttempts = new Map<string, { count: number; lastAttempt: number }>();
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOGIN_BLOCK_MINUTES = 15;
+
+function checkBruteForce(ip: string): { blocked: boolean; remainingMinutes: number } {
+  const now = Date.now();
+  const entry = loginAttempts.get(ip);
+  if (!entry) return { blocked: false, remainingMinutes: 0 };
+
+  const elapsed = (now - entry.lastAttempt) / 1000 / 60;
+  if (entry.count >= MAX_LOGIN_ATTEMPTS && elapsed < LOGIN_BLOCK_MINUTES) {
+    return { blocked: true, remainingMinutes: Math.ceil(LOGIN_BLOCK_MINUTES - elapsed) };
+  }
+
+  // Reset após o tempo de bloqueio
+  if (elapsed >= LOGIN_BLOCK_MINUTES) {
+    loginAttempts.delete(ip);
+    return { blocked: false, remainingMinutes: 0 };
+  }
+
+  return { blocked: false, remainingMinutes: 0 };
+}
+
+function recordFailedAttempt(ip: string) {
+  const now = Date.now();
+  const entry = loginAttempts.get(ip);
+  if (!entry) {
+    loginAttempts.set(ip, { count: 1, lastAttempt: now });
+  } else {
+    entry.count += 1;
+    entry.lastAttempt = now;
+  }
+}
+
+function clearLoginAttempts(ip: string) {
+  loginAttempts.delete(ip);
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────────
 function slugify(name: string) {
   return name
     .toLowerCase()
@@ -34,11 +75,18 @@ function validateCPF(cpf: string) {
   return r === parseInt(digits[10]);
 }
 
+// ─── Zod schemas ────────────────────────────────────────────────────────
 const RegisterSchema = z.object({
   name: z.string().min(2, "Nome deve ter ao menos 2 caracteres."),
   cpf: z.string().refine((v) => validateCPF(v), "CPF inválido."),
   email: z.string().email("Email inválido."),
-  password: z.string().min(6, "Senha deve ter ao menos 6 caracteres."),
+  password: z.string().refine(
+    (v) => {
+      const result = validateStrongPassword(v);
+      return result.valid;
+    },
+    (v) => ({ message: validateStrongPassword(v).message })
+  ),
   role: z.enum(["client", "barber"]),
   location: z.string().optional(),
   phone: z.string().optional(),
@@ -52,6 +100,30 @@ const LoginSchema = z.object({
   cpf: z.string().min(1, "Informe o CPF."),
   password: z.string().min(1),
 });
+
+// ─── JWT helpers ────────────────────────────────────────────────────────
+const JWT_EXPIRES_IN = "7d";
+const REFRESH_TOKEN_EXPIRES_IN_DAYS = 30;
+
+function signAccessToken(payload: Record<string, unknown>): string {
+  const jti = randomBytes(16).toString("hex");
+  return jwt.sign(
+    { ...payload, jti },
+    process.env.JWT_SECRET!,
+    { expiresIn: JWT_EXPIRES_IN }
+  );
+}
+
+async function storeRefreshToken(userId: string, token: string): Promise<void> {
+  const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000);
+  await prisma.passwordReset.create({
+    data: {
+      token,
+      userId,
+      expiresAt,
+    },
+  });
+}
 
 /**
  * @openapi
@@ -142,11 +214,7 @@ authRouter.post("/register", validate(RegisterSchema), async (req, res) => {
         });
       });
 
-      const token = jwt.sign(
-        { userId: user!.id, barberId: user!.barber!.id, role: "barber" },
-        process.env.JWT_SECRET!,
-        { expiresIn: "7d" }
-      );
+      const token = signAccessToken({ userId: user!.id, barberId: user!.barber!.id, role: "barber" });
       res.status(201).json({ token, role: "barber", barber: user!.barber, user: { id: user!.id, name: user!.name, email: user!.email } });
       return;
     }
@@ -164,11 +232,7 @@ authRouter.post("/register", validate(RegisterSchema), async (req, res) => {
       include: { client: true },
     });
 
-    const token = jwt.sign(
-      { userId: user.id, role: "client", clientId: user.client?.id },
-      process.env.JWT_SECRET!,
-      { expiresIn: "7d" }
-    );
+    const token = signAccessToken({ userId: user.id, role: "client", clientId: user.client?.id });
     res.status(201).json({ token, role: "client", user: { id: user.id, name: user.name, email: user.email } });
 
   } catch (err) {
@@ -201,6 +265,19 @@ authRouter.post("/register", validate(RegisterSchema), async (req, res) => {
  */
 authRouter.post("/login", validate(LoginSchema), async (req, res) => {
   try {
+    const clientIp = req.ip ?? req.socket.remoteAddress ?? "unknown";
+
+    // Verifica brute-force
+    const { blocked, remainingMinutes } = checkBruteForce(clientIp);
+    if (blocked) {
+      logger.warn({ ip: clientIp }, "Login bloqueado por brute-force");
+      return res.status(429).json({
+        success: false,
+        code: "TOO_MANY_ATTEMPTS",
+        message: `Muitas tentativas de login. Tente novamente em ${remainingMinutes} minuto(s).`,
+      });
+    }
+
     const { cpf, password } = req.body as z.infer<typeof LoginSchema>;
     const cpfHash = hashCPF(cpf.replace(/\D/g, ""));
 
@@ -208,17 +285,26 @@ authRouter.post("/login", validate(LoginSchema), async (req, res) => {
       where: { cpfHash },
       include: { barber: { include: { services: true, gallery: true } }, client: true },
     });
-    if (!user) return res.status(401).json({ success: false, code: "UNAUTHORIZED", message: "CPF ou senha incorretos." });
+    if (!user) {
+      recordFailedAttempt(clientIp);
+      return res.status(401).json({ success: false, code: "UNAUTHORIZED", message: "CPF ou senha incorretos." });
+    }
 
     const valid = await bcrypt.compare(password, user.passwordHash);
-    if (!valid) return res.status(401).json({ success: false, code: "UNAUTHORIZED", message: "CPF ou senha incorretos." });
+    if (!valid) {
+      recordFailedAttempt(clientIp);
+      return res.status(401).json({ success: false, code: "UNAUTHORIZED", message: "CPF ou senha incorretos." });
+    }
+
+    // Login bem-sucedido: limpa tentativas
+    clearLoginAttempts(clientIp);
 
     const payload =
       user.role === "barber"
         ? { userId: user.id, barberId: user.barber?.id, role: "barber" }
         : { userId: user.id, clientId: user.client?.id, role: "client" };
 
-    const token = jwt.sign(payload, process.env.JWT_SECRET!, { expiresIn: "7d" });
+    const token = signAccessToken(payload);
 
     res.json({
       token,
@@ -262,7 +348,13 @@ authRouter.post("/reset-password", async (req, res) => {
   try {
     const { token, password } = z.object({
       token: z.string().uuid(),
-      password: z.string().min(6, "Senha deve ter ao menos 6 caracteres."),
+      password: z.string().refine(
+        (v) => {
+          const result = validateStrongPassword(v);
+          return result.valid;
+        },
+        (v) => ({ message: validateStrongPassword(v).message })
+      ),
     }).parse(req.body);
 
     const entry = await prisma.passwordReset.findUnique({ where: { token } });

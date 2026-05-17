@@ -205,4 +205,13 @@ export const api = {
   // ─── CRM Clientes ────────────────────────────────────────────────────
   getClients: () =>
     apiFetch<ClientProfile[]>("/api/barbers/me/clients"),
+
+  // ─── Pagamentos ────────────────────────────────────────────────────────
+  confirmPayment: (appointmentId: string) =>
+    apiFetch<{ success: boolean }>(`/api/barbers/me/appointments/${appointmentId}/confirm-payment`, {
+      method: "PATCH",
+    }),
+
+  getPendingPayments: () =>
+    apiFetch<Appointment[]>("/api/barbers/me/appointments/pending-payment"),
 };

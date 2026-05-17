@@ -1,4 +1,5 @@
 "use client";
+import { BarberStatus } from "@/types";
 
 import { useEffect, useState } from "react";
 import { useParams, notFound } from "next/navigation";
@@ -238,6 +239,9 @@ export default function BarberPage() {
             {barber.location && (
               <span className="flex items-center gap-1"><MapPin size={13} />{barber.location}</span>
             )}
+            {barber.cep && (
+              <span className="flex items-center gap-1 text-zinc-500">CEP: {barber.cep}</span>
+            )}
             {barber.instagram && (
               <a
                 href={`https://instagram.com/${barber.instagram.replace("@", "")}`}
@@ -259,9 +263,74 @@ export default function BarberPage() {
               </a>
             )}
           </div>
+          {barber.referencePoint && (
+            <p className="mt-2 flex items-center gap-1 text-sm text-amber-400/80">
+              <MapPin size={13} /> {barber.referencePoint}
+            </p>
+          )}
           {barber.bio && (
             <p className="mt-3 text-sm leading-relaxed text-zinc-400">{barber.bio}</p>
           )}
+
+          {/* Imagens de localização */}
+          {(() => {
+            try {
+              const locImages = JSON.parse(barber.locationImages || "[]") as string[];
+              if (locImages.length === 0) return null;
+              return (
+                <div className="mt-4">
+                  <h3 className="mb-3 text-xs font-semibold uppercase tracking-widest text-zinc-500">Como chegar</h3>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {locImages.map((url, i) => (
+                      <button
+                        key={i}
+                        onClick={() => setLightboxIndex(barber.gallery.length + i)}
+                        className="group relative aspect-video overflow-hidden rounded-xl bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      >
+                        <Image
+                          src={url}
+                          fill
+                          sizes="(max-width: 672px) 50vw, 224px"
+                          className="object-cover transition hover:scale-105"
+                          alt={`Como chegar ${i + 1}`}
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            } catch { return null; }
+          })()}
+
+          {/* Métodos de Pagamento */}
+          {(() => {
+            try {
+              const payments = JSON.parse(barber.acceptedPayments || "[]") as string[];
+              if (payments.length === 0) return null;
+              const labels: Record<string, string> = {
+                pix: "Pix",
+                credit: "Cartão de Crédito",
+                debit: "Cartão de Débito",
+                cash: "Dinheiro",
+              };
+              return (
+                <div className="mt-6">
+                  <h3 className="mb-3 text-xs font-semibold uppercase tracking-widest text-zinc-500">Formas de Pagamento</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {payments.map((p) => (
+                      <span
+                        key={p}
+                        className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-1.5 text-xs font-medium text-amber-400"
+                      >
+                        {labels[p] || p}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              );
+            } catch { return null; }
+          })()}
         </div>
 
         {/* Galeria */}

@@ -131,7 +131,10 @@ barberRouter.get("/", async (req, res, next) => {
     });
     const ratingMap = Object.fromEntries(ratingAggs.map((r) => [r.barberId, r]));
 
-    res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=120");
+    // Sem cache para garantir que fotos atualizadas apareçam imediatamente
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
     res.json(barbers.map((b) => ({
       ...b,
       averageRating: ratingMap[b.id]?._avg.rating ?? null,
@@ -182,6 +185,10 @@ const UpdateSchema = z.object({
   avatarUrl: z.string().url().optional().or(z.literal("")),
   instagram: z.string().optional(),
   phone: z.string().optional(),
+  cep: z.string().optional(),
+  referencePoint: z.string().optional(),
+  locationImages: z.string().optional(), // JSON array de URLs
+  acceptedPayments: z.string().optional(), // JSON array: ["pix","credit","debit","cash"]
 });
 
 barberRouter.put("/me/profile", authMiddleware, requireBarber, async (req: AuthRequest, res, next) => {
@@ -662,13 +669,17 @@ barberRouter.get("/me/loyalty/rewards", authMiddleware, requireBarber, async (re
   try {
     const barber = await prisma.barber.findUnique({ where: { id: req.barberId }, select: { barbershopId: true } });
     if (!barber) throw new NotFoundException("Barbeiro");
-    // Recompensas são globais da barbearia — armazenamos como JSON no barbershop ou simplesmente fixas
-    // Por simplicidade, retornamos recompensas padrão + customizadas
-    const rewards = await prisma.$queryRawUnsafe<any[]>(
-      `SELECT id, name, description, points_cost as pointsCost, active FROM loyalty_rewards WHERE barbershop_id = ?`,
-      barber.barbershopId
-    ).catch(() => []);
-    res.json(rewards);
+    const rewards = await prisma.loyaltyReward.findMany({
+      where: { barbershopId: barber.barbershopId },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json(rewards.map((r) => ({
+      id: r.id,
+      name: r.name,
+      description: r.description,
+      pointsCost: r.pointsCost,
+      active: r.active,
+    })));
   } catch (err) { next(err); }
 });
 
@@ -682,11 +693,21 @@ barberRouter.post("/me/loyalty/rewards", authMiddleware, requireBarber, async (r
     }).parse(req.body);
     const barber = await prisma.barber.findUnique({ where: { id: req.barberId }, select: { barbershopId: true } });
     if (!barber) throw new NotFoundException("Barbeiro");
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO loyalty_rewards (id, barbershop_id, name, description, points_cost, active) VALUES (?, ?, ?, ?, ?, 1)`,
-      require("crypto").randomUUID(), barber.barbershopId, name, description, pointsCost
-    );
-    res.json({ id: "", name, description, pointsCost, active: true });
+    const reward = await prisma.loyaltyReward.create({
+      data: {
+        barbershopId: barber.barbershopId,
+        name,
+        description,
+        pointsCost,
+      },
+    });
+    res.json({
+      id: reward.id,
+      name: reward.name,
+      description: reward.description,
+      pointsCost: reward.pointsCost,
+      active: reward.active,
+    });
   } catch (err) {
     if (err instanceof z.ZodError) return res.status(400).json({ message: err.issues[0].message });
     next(err);
@@ -696,7 +717,7 @@ barberRouter.post("/me/loyalty/rewards", authMiddleware, requireBarber, async (r
 // DELETE /me/loyalty/rewards/:id
 barberRouter.delete("/me/loyalty/rewards/:id", authMiddleware, requireBarber, async (req: AuthRequest, res, next) => {
   try {
-    await prisma.$executeRawUnsafe(`DELETE FROM loyalty_rewards WHERE id = ?`, req.params.id);
+    await prisma.loyaltyReward.delete({ where: { id: req.params.id } });
     res.json({ success: true });
   } catch (err) { next(err); }
 });
@@ -902,3 +923,75 @@ interface ClientProfileData {
   totalSpentInCents: number;
   lastVisit: string;
 }
+
+// ─── Pagamentos ──────────────────────────────────────────────────────────────
+
+/**
+ * @openapi
+ * /api/barbers/me/appointments/{id}/confirm-payment:
+ *   patch:
+ *     tags: [Pagamentos]
+ *     summary: Barbeiro confirma pagamento de um agendamento
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Pagamento confirmado
+ */
+barberRouter.patch("/me/appointments/:id/confirm-payment", authMiddleware, requireBarber, async (req: AuthRequest, res, next) => {
+  try {
+    const { id } = req.params;
+    if (!req.barberId) throw new NotFoundException("Barbeiro");
+
+    const appointment = await prisma.appointment.findFirst({
+      where: { id, barberId: req.barberId },
+    });
+    if (!appointment) throw new NotFoundException("Agendamento");
+
+    if (appointment.status !== "completed") {
+      throw new BusinessRuleException("Apenas agendamentos concluídos podem ter pagamento confirmado.");
+    }
+
+    await prisma.appointment.update({
+      where: { id },
+      data: { paymentStatus: "confirmed" },
+    });
+
+    res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
+/**
+ * @openapi
+ * /api/barbers/me/appointments/pending-payment:
+ *   get:
+ *     tags: [Pagamentos]
+ *     summary: Lista agendamentos concluídos com pagamento pendente
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: Lista de agendamentos
+ */
+barberRouter.get("/me/appointments/pending-payment", authMiddleware, requireBarber, async (req: AuthRequest, res, next) => {
+  try {
+    if (!req.barberId) throw new NotFoundException("Barbeiro");
+
+    const appointments = await prisma.appointment.findMany({
+      where: {
+        barberId: req.barberId,
+        status: "completed",
+        paymentStatus: "pending",
+      },
+      include: {
+        service: { select: { name: true, priceInCents: true } },
+      },
+      orderBy: { startsAt: "desc" },
+    });
+
+    res.json(appointments);
+  } catch (err) { next(err); }
+});

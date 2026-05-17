@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { io } from "socket.io-client";
 import {
-  Scissors, Plus, Trash2,
+  Scissors, Plus, Trash2, MapPin,
   Save, Image as ImageIcon, ExternalLink, Clock, Check, CalendarDays, User, Calendar, MessageCircle, ShieldOff, Copy, CheckCheck, Inbox, X,
   Wifi, WifiOff, Coffee, Briefcase, Users, UserPlus, UserMinus, Crown
 } from "lucide-react";
@@ -50,7 +50,8 @@ export default function DashboardPage() {
   const [data, setData] = useState<Barber | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [profile, setProfile] = useState({ name: "", bio: "", location: "", coverUrl: "", avatarUrl: "", instagram: "", phone: "" });
+  const [profile, setProfile] = useState({ name: "", bio: "", location: "", coverUrl: "", avatarUrl: "", instagram: "", phone: "", cep: "", referencePoint: "", locationImages: "[]" });
+  const [acceptedPayments, setAcceptedPayments] = useState<string[]>(["pix", "credit", "debit", "cash"]);
   const [newImage, setNewImage] = useState({ url: "", caption: "" });
   const [feedback, setFeedback] = useState("");
   const [savingServices, setSavingServices] = useState(false);
@@ -140,7 +141,10 @@ export default function DashboardPage() {
         name: d.name ?? "", bio: d.bio ?? "", location: d.location ?? "",
         coverUrl: d.coverUrl ?? "", avatarUrl: d.avatarUrl ?? "",
         instagram: d.instagram ?? "", phone: d.phone ?? "",
+        cep: d.cep ?? "", referencePoint: d.referencePoint ?? "",
+        locationImages: d.locationImages ?? "[]",
       });
+      try { setAcceptedPayments(JSON.parse(d.acceptedPayments || "[]")); } catch { setAcceptedPayments(["pix", "credit", "debit", "cash"]); }
       setBarberStatus(d.status ?? "AVAILABLE");
       setQueueCount(d.queueCount ?? 0);
       setPresets((prev) => {
@@ -164,7 +168,10 @@ export default function DashboardPage() {
   async function saveProfile() {
     setSaving(true);
     try {
-      const updated = await api.updateProfile(profile);
+      const updated = await api.updateProfile({
+        ...profile,
+        acceptedPayments: JSON.stringify(acceptedPayments),
+      });
       setData((d) => d ? { ...d, ...updated } : d);
       setFeedback("Perfil salvo com sucesso!");
       setTimeout(() => setFeedback(""), 3000);
@@ -608,6 +615,111 @@ export default function DashboardPage() {
                 />
               </div>
             </div>
+
+            {/* ─── Localização ─────────────────────────────────────── */}
+            <div className="mt-6 border-t border-white/5 pt-6">
+              <h3 className="mb-4 flex items-center gap-2 text-sm font-bold text-amber-400">
+                <MapPin size={14} /> Localização da Barbearia
+              </h3>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-zinc-400">CEP</label>
+                  <input
+                    value={profile.cep}
+                    onChange={(e) => setProfile({ ...profile, cep: e.target.value })}
+                    className="w-full rounded-xl border border-white/10 bg-zinc-800 px-4 py-2.5 text-sm text-white placeholder-zinc-600 focus:border-amber-500/50 focus:outline-none"
+                    placeholder="00000-000"
+                    maxLength={9}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-zinc-400">Ponto de Referência</label>
+                  <input
+                    value={profile.referencePoint}
+                    onChange={(e) => setProfile({ ...profile, referencePoint: e.target.value })}
+                    className="w-full rounded-xl border border-white/10 bg-zinc-800 px-4 py-2.5 text-sm text-white placeholder-zinc-600 focus:border-amber-500/50 focus:outline-none"
+                    placeholder="Ex: Ao lado do supermercado X"
+                  />
+                </div>
+              </div>
+
+              {/* Imagens de localização */}
+              <div className="mt-4">
+                <label className="mb-1.5 block text-xs font-medium text-zinc-400">Fotos do ponto exato</label>
+                <p className="mb-3 text-xs text-zinc-600">Adicione fotos da fachada, pontos de referência ou onde encontrar a barbearia.</p>
+                <ImageUpload
+                  label="Adicionar foto da localização"
+                  value=""
+                  onChange={(url) => {
+                    const current = JSON.parse(profile.locationImages || "[]") as string[];
+                    current.push(url);
+                    setProfile({ ...profile, locationImages: JSON.stringify(current) });
+                  }}
+                  aspect="wide"
+                />
+                {(() => {
+                  const images = JSON.parse(profile.locationImages || "[]") as string[];
+                  if (images.length === 0) return null;
+                  return (
+                    <div className="mt-3 grid grid-cols-3 gap-2">
+                      {images.map((url, i) => (
+                        <div key={i} className="group relative aspect-video overflow-hidden rounded-xl bg-zinc-800">
+                          <Image src={url} fill className="object-cover" alt={`Localização ${i + 1}`} />
+                          <button
+                            onClick={() => {
+                              const current = JSON.parse(profile.locationImages || "[]") as string[];
+                              current.splice(i, 1);
+                              setProfile({ ...profile, locationImages: JSON.stringify(current) });
+                            }}
+                            className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition group-hover:opacity-100 hover:bg-red-500"
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* ─── Métodos de Pagamento ──────────────────────────────── */}
+            <div className="mt-6 border-t border-white/5 pt-6">
+              <h3 className="mb-4 flex items-center gap-2 text-sm font-bold text-amber-400">
+                <Crown size={14} /> Métodos de Pagamento Aceitos
+              </h3>
+              <p className="mb-3 text-xs text-zinc-500">Selecione os métodos que sua barbearia aceita.</p>
+              <div className="flex flex-wrap gap-3">
+                {[
+                  { value: "pix", label: "Pix", icon: "💳" },
+                  { value: "credit", label: "Cartão de Crédito", icon: "💳" },
+                  { value: "debit", label: "Cartão de Débito", icon: "💳" },
+                  { value: "cash", label: "Dinheiro", icon: "💰" },
+                ].map((method) => {
+                  const selected = acceptedPayments.includes(method.value);
+                  return (
+                    <button
+                      key={method.value}
+                      onClick={() => {
+                        setAcceptedPayments((prev) =>
+                          selected ? prev.filter((p) => p !== method.value) : [...prev, method.value]
+                        );
+                      }}
+                      className={`flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all active:scale-95 ${
+                        selected
+                          ? "border-amber-500/50 bg-amber-500/10 text-amber-400"
+                          : "border-white/10 bg-zinc-800 text-zinc-400 hover:border-white/20"
+                      }`}
+                    >
+                      <span className={`text-base ${selected ? "opacity-100" : "opacity-50"}`}>{method.icon}</span>
+                      {method.label}
+                      {selected && <Check size={14} className="text-amber-500" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <button
               onClick={saveProfile}
               disabled={saving}
@@ -894,6 +1006,51 @@ export default function DashboardPage() {
               Ver Finanças
             </a>
           </section>
+
+          {/* Pagamentos Pendentes */}
+          {data.appointments && data.appointments.filter((a) => a.status === "completed" && a.paymentStatus === "pending").length > 0 && (
+            <section className="rounded-3xl border border-amber-500/20 bg-amber-950/10 p-4 sm:p-6">
+              <h2 className="mb-4 flex items-center gap-2 font-bold text-white">
+                <Crown size={16} className="text-amber-500" /> Pagamentos Pendentes
+              </h2>
+              <div className="flex flex-col gap-2">
+                {data.appointments
+                  .filter((a) => a.status === "completed" && a.paymentStatus === "pending")
+                  .slice(0, 10)
+                  .map((a: Appointment) => {
+                    const service = data.services.find((s) => s.id === a.serviceId);
+                    return (
+                      <div key={a.id} className="flex items-center justify-between rounded-xl border border-amber-500/10 bg-zinc-800 px-4 py-3">
+                        <div>
+                          <p className="text-sm font-medium text-white">{a.clientName}</p>
+                          <p className="text-xs text-zinc-500">
+                            {service?.name ?? "Serviço"} · {new Date(a.startsAt).toLocaleDateString("pt-BR")}
+                          </p>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            try {
+                              await api.confirmPayment(a.id);
+                              setData((d) => d ? {
+                                ...d,
+                                appointments: d.appointments!.map((app) =>
+                                  app.id === a.id ? { ...app, paymentStatus: "confirmed" } : app
+                                ),
+                              } : d);
+                              setFeedback("Pagamento confirmado!");
+                              setTimeout(() => setFeedback(""), 3000);
+                            } catch { setFeedback("Erro ao confirmar pagamento."); setTimeout(() => setFeedback(""), 3000); }
+                          }}
+                          className="flex items-center gap-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/20 active:scale-95 transition-transform"
+                        >
+                          <Check size={13} /> Confirmar Pagamento
+                        </button>
+                      </div>
+                    );
+                  })}
+              </div>
+            </section>
+          )}
 
           {/* Clientes Bloqueados */}
           {blockedClients.length > 0 && (

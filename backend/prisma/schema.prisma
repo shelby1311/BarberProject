@@ -66,6 +66,10 @@ model Barber {
   avatarUrl                   String        @default("") @map("avatar_url")
   instagram                   String        @default("")
   phone                       String        @default("")
+  cep                         String        @default("") @map("cep")
+  referencePoint              String        @default("") @map("reference_point")
+  locationImages              String        @default("") @map("location_images") // JSON array de URLs
+  acceptedPayments            String        @default("[]") @map("accepted_payments") // JSON array: ["pix","credit","debit","cash"]
   commissionPct               Float         @default(50) @map("commission_pct")
   status                      String        @default("AVAILABLE") // AVAILABLE | BUSY | BREAK | OFFLINE
   queueCount                  Int           @default(0) @map("queue_count")
@@ -144,6 +148,7 @@ model Appointment {
   startsAt      DateTime  @map("starts_at")
   endsAt        DateTime? @map("ends_at")  // calculado a partir de durationMinutes
   status        String    @default("pending") // pending | confirmed | completed | cancelled | no_show
+  paymentStatus String    @default("pending") @map("payment_status") // pending | confirmed
   pointsAwarded Boolean   @default(false) @map("points_awarded")
   createdAt     DateTime  @default(now()) @map("created_at")
   barber        Barber    @relation(fields: [barberId], references: [id])
@@ -180,6 +185,18 @@ model Review {
   client        Client      @relation(fields: [clientId], references: [id])
 
   @@map("reviews")
+}
+
+model LoyaltyReward {
+  id           String   @id @default(cuid())
+  barbershopId String   @map("barbershop_id")
+  name         String
+  description  String   @default("")
+  pointsCost   Int      @map("points_cost")
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("loyalty_rewards")
 }
 
 model PasswordReset {

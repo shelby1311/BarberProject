@@ -154,7 +154,7 @@ export default function FinancasPage() {
                   <Tooltip
                     contentStyle={{ background: "#18181b", border: "1px solid #27272a", borderRadius: 12, fontSize: 12 }}
                     labelStyle={{ color: "#a1a1aa" }}
-                    formatter={(value: number, name: string) => [brl(value), name === "revenue" ? "Faturamento" : "Despesas"]}
+                    formatter={(value, name) => [brl(Number(value ?? 0)), name === "revenue" ? "Faturamento" : "Despesas"]}
                   />
                   <Area type="monotone" dataKey="revenue" stroke="#34d399" strokeWidth={2} fill="url(#gradRevenue)" dot={false} />
                   <Area type="monotone" dataKey="expenses" stroke="#f87171" strokeWidth={2} fill="url(#gradExpenses)" dot={false} />

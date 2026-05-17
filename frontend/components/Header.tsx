@@ -77,11 +77,16 @@ export function Header() {
                       )}
                     </Link>
                     <Link
-                      href="/dashboard#caixa-de-entrada"
+                      href="/dashboard/caixa-de-entrada"
                       className="relative flex items-center gap-1.5 rounded-xl border border-white/10 px-3 py-2 text-sm font-medium text-zinc-300 hover:border-amber-500/40 hover:text-white transition"
                     >
                       <Inbox size={15} />
                       <span className="hidden sm:inline">Caixa de Entrada</span>
+                      {pendingCount > 0 && (
+                        <span className="flex h-4 w-4 items-center justify-center rounded-full bg-amber-500 text-xs font-black text-black">
+                          {pendingCount}
+                        </span>
+                      )}
                     </Link>
                   </>
                 )}

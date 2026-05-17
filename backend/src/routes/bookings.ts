@@ -127,6 +127,21 @@ bookingRouter.post("/", validate(BookingSchema), async (req, res, next) => {
       if (client?.isBlocked) {
         throw new BusinessRuleException("Você está bloqueado nesta barbearia devido a faltas repetidas. Entre em contato com o barbeiro.");
       }
+
+      // Verifica se cliente possui pagamento pendente (agendamento concluído mas não pago)
+      const pendingPayment = await prisma.appointment.findFirst({
+        where: {
+          clientId,
+          barberId,
+          status: "completed",
+          paymentStatus: "pending",
+        },
+      });
+      if (pendingPayment) {
+        throw new BusinessRuleException(
+          "Você possui um pagamento pendente de um agendamento anterior. Regularize diretamente com o barbeiro para realizar um novo agendamento."
+        );
+      }
     }
 
     const endsAt = new Date(startTime.getTime() + service.durationMinutes * 60 * 1000);
@@ -153,6 +168,16 @@ bookingRouter.post("/", validate(BookingSchema), async (req, res, next) => {
 
     logger.info({ appointmentId: appointment.id, clientName, barberName: barber.name, serviceName: service.name, priceInCents: finalPriceInCents }, "Novo agendamento criado");
 
+    // Gera link do Google Agenda
+    const endsAtStr = endsAt.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+    const startsAtStr = startTime.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+    const googleCalendarUrl = `https://www.google.com/calendar/render?action=TEMPLATE` +
+      `&text=${encodeURIComponent(`${service.name} - ${barber.name}`)}` +
+      `&dates=${startsAtStr}/${endsAtStr}` +
+      `&details=${encodeURIComponent(`Agendamento com ${barber.name}\nServiço: ${service.name}\nCliente: ${clientName}`)}` +
+      `&location=${encodeURIComponent(barber.location || "")}` +
+      `&sf=true&output=xml`;
+
     // Notifica dashboard do barbeiro em tempo real
     io.to(`barber:${barberId}`).emit("booking:new", {
       appointmentId: appointment.id,
@@ -167,6 +192,7 @@ bookingRouter.post("/", validate(BookingSchema), async (req, res, next) => {
       finalPriceInCents,
       pixKey: "barberflow@pix.com.br",
       pixMessage: `Pagamento opcional via Pix: barberflow@pix.com.br — R$ ${(finalPriceInCents / 100).toFixed(2)}`,
+      googleCalendarUrl,
     });
   } catch (err) {
     if (err instanceof AppError) {

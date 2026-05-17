@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarDays, Clock, AlertCircle, CheckCircle2, ChevronRight, QrCode, Scissors } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -46,10 +46,18 @@ export function BookingCalendar({ barberId, barberSlug, services, initialSlots, 
   const [selectedDay, setSelectedDay] = useState(days[0]);
   const [slots, setSlots] = useState<Date[]>(initialSlots.map((s) => new Date(s)));
   const [selectedSlot, setSelectedSlot] = useState<Date | null>(null);
-  const [clientName, setClientName] = useState("");
+  const [clientName, setClientName] = useState(user?.name ?? "");
   const [feedback, setFeedback] = useState<{ type: "error" | "success"; message: string } | null>(null);
   const [loading, setLoading] = useState(false);
-  const [pixInfo, setPixInfo] = useState<{ key: string; message: string; price: number } | null>(null);
+  const [pixInfo, setPixInfo] = useState<{ key: string; message: string; price: number; googleCalendarUrl?: string } | null>(null);
+  const notifiedRef = useRef(false);
+
+  // Solicita permissão para notificações push
+  useEffect(() => {
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  }, []);
 
   // Rehydrate pending booking after login redirect
   useEffect(() => {
@@ -112,8 +120,16 @@ export function BookingCalendar({ barberId, barberSlug, services, initialSlots, 
         useOnlineDiscount: true,
       });
       if (result.success) {
-        setPixInfo({ key: result.pixKey, message: result.pixMessage, price: result.finalPriceInCents });
+        setPixInfo({ key: result.pixKey, message: result.pixMessage, price: result.finalPriceInCents, googleCalendarUrl: result.googleCalendarUrl });
         setStep("done");
+        // Notificação push no navegador
+        if (!notifiedRef.current && "Notification" in window && Notification.permission === "granted") {
+          notifiedRef.current = true;
+          new Notification("BarberFlow", {
+            body: `Agendamento confirmado! ${selectedService.name} às ${fmt(selectedSlot)}`,
+            icon: "/favicon.ico",
+          });
+        }
       } else {
         setFeedback({ type: "error", message: result.message ?? "Erro ao confirmar agendamento." });
       }
@@ -305,7 +321,7 @@ export function BookingCalendar({ barberId, barberSlug, services, initialSlots, 
           </motion.div>
         )}
 
-        {/* DONE: Confirmado + Pix */}
+        {/* DONE: Confirmado + Pix + Google Agenda */}
         {step === "done" && pixInfo && selectedSlot && selectedService && (
           <motion.div key="done" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
             <div className="mb-5 flex flex-col items-center gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-950/30 p-6 text-center">
@@ -315,6 +331,18 @@ export function BookingCalendar({ barberId, barberSlug, services, initialSlots, 
                 {selectedService.name} às <span className="font-bold text-amber-400">{fmt(selectedSlot)}</span> em {fmtDate(selectedDay)}
               </p>
             </div>
+
+            {/* Google Agenda */}
+            {pixInfo.googleCalendarUrl && (
+              <a
+                href={pixInfo.googleCalendarUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mb-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-blue-500/30 bg-blue-500/10 py-3 text-sm font-semibold text-blue-400 hover:bg-blue-500/20 transition"
+              >
+                <CalendarDays size={16} /> Adicionar ao Google Agenda
+              </a>
+            )}
 
             <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
               <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-400">
@@ -334,7 +362,7 @@ export function BookingCalendar({ barberId, barberSlug, services, initialSlots, 
             </div>
 
             <button
-              onClick={() => { setStep("service"); setSelectedService(null); setSelectedSlot(null); setClientName(""); setPixInfo(null); }}
+              onClick={() => { setStep("service"); setSelectedService(null); setSelectedSlot(null); setClientName(""); setPixInfo(null); notifiedRef.current = false; }}
               className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 py-3 text-sm font-semibold text-zinc-400 hover:text-white transition"
             >
               <Scissors size={14} /> Fazer outro agendamento
